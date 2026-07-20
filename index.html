@@ -672,7 +672,7 @@ function seedData(){
         id: cryptoId(), name:"個人賽", date:"2026-07-17", type:"individual",
         individualMain:["王小明","陳曉華","林志豪","黃美玲"],
         individualBackup:["張家豪","李佳穎"],
-        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
+        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
       },
       {
         id: cryptoId(), name:"王牌團體賽", date:"2026-07-24", type:"team",
@@ -684,7 +684,7 @@ function seedData(){
         backupTeams:[
           { id: cryptoId(), name:"C隊", members:["張惠妹","周杰倫"] }
         ],
-        started:false, bracket:null, swiss:null, group:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
+        started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
       }
     ]
   };
@@ -714,6 +714,10 @@ function isTournamentFinished(ev){
     const lastRound = ev.swiss.rounds[ev.swiss.rounds.length-1];
     return lastRound.every(m=> !!m.winner);
   }
+  if(ev.format === 'doubleElim'){
+    if(!ev.doubleElim) return false;
+    return !!getDoubleElimChampion(ev.doubleElim);
+  }
   if(ev.bracket){
     const rounds = totalRounds(ev.bracket);
     if(ev.bracket.finalStage === 'roundrobin'){
@@ -734,7 +738,7 @@ function isTournamentFinished(ev){
 // Returns the small header badge for a started tournament: the pulsing
 // "in progress" chip, or a static "finished" chip once there's a result.
 function getTournamentStatusBadge(ev){
-  if(!(ev.started && (ev.bracket || ev.swiss || ev.group))) return '';
+  if(!(ev.started && (ev.bracket || ev.swiss || ev.group || ev.doubleElim))) return '';
   if(isTournamentFinished(ev)){
     return '<span class="type-chip finished-badge" style="cursor:default;">🏁 比賽結束</span>';
   }
@@ -742,6 +746,24 @@ function getTournamentStatusBadge(ev){
 }
 
 function getEventPodium(ev){
+  if(ev.format === 'doubleElim' && ev.doubleElim){
+    const de = ev.doubleElim;
+    const champion = getDoubleElimChampion(de);
+    if(!champion) return null;
+    const wbChamp = getWbChampion(de), lbChamp = getLbChampion(de);
+    const runnerUp = champion === wbChamp ? lbChamp : wbChamp;
+    let third = [];
+    const lbTotal = totalLbRounds(de);
+    if(lbTotal > 0){
+      const lastEntrants = lbRoundEntrants(de, lbTotal - 1);
+      const lastPick = de.lb.picks[`${lbTotal-1}-0`];
+      if(lastPick){
+        const t = lastPick === lastEntrants[0] ? lastEntrants[1] : lastEntrants[0];
+        if(t) third = [t];
+      }
+    }
+    return { champion, runnerUp, third, fourth: null };
+  }
   if(!ev.bracket) return null;
   const bracket = ev.bracket;
   const rounds = totalRounds(bracket);
@@ -760,7 +782,7 @@ function getEventPodium(ev){
     });
     if(!allDecided) return null;
     const sorted = Object.entries(wins).sort((a,b)=>b[1]-a[1]).map(e=>e[0]);
-    return { champion: sorted[0] || null, runnerUp: sorted[1] || null, third: sorted[2] ? [sorted[2]] : [] };
+    return { champion: sorted[0] || null, runnerUp: sorted[1] || null, third: sorted[2] ? [sorted[2]] : [], fourth: null };
   }
   const champion = getRoundEntrants(bracket, rounds)[0];
   if(!champion) return null;
@@ -768,13 +790,19 @@ function getEventPodium(ev){
   const runnerUp = finalists.find(n=> n && n !== champion) || null;
   const semiLosers = getSemifinalLosers(bracket, rounds);
   let third = [];
+  let fourth = null;
   if(semiLosers.length === 2){
     const thirdPick = bracket.picks ? bracket.picks['3rd'] : null;
-    third = thirdPick ? [thirdPick] : semiLosers; // fall back to showing both until the 3rd-place match is played
+    if(thirdPick){
+      third = [thirdPick];
+      fourth = semiLosers.find(n=> n !== thirdPick) || null;
+    } else {
+      third = semiLosers; // fall back to showing both until the 3rd-place match is played
+    }
   } else if(semiLosers.length === 1){
     third = semiLosers;
   }
-  return { champion, runnerUp, third };
+  return { champion, runnerUp, third, fourth };
 }
 
 function openEventDetailAndRegister(id){
@@ -810,7 +838,7 @@ function renderEventList(filter){
     const liveBadge = getTournamentStatusBadge(ev);
     const podium = getEventPodium(ev);
     const podiumHtml = podium
-      ? `<p class="ev-meta" style="color:var(--lane-gold);">🏆 ${escapeHtml(podium.champion)}${podium.runnerUp ? `　🥈 ${escapeHtml(podium.runnerUp)}` : ''}${podium.third.length ? `　🥉 ${podium.third.map(escapeHtml).join('、')}` : ''}</p>`
+      ? `<p class="ev-meta" style="color:var(--lane-gold);">🏆 ${escapeHtml(podium.champion)}${podium.runnerUp ? `　🥈 ${escapeHtml(podium.runnerUp)}` : ''}${podium.third.length ? `　🥉 ${podium.third.map(escapeHtml).join('、')}` : ''}${podium.fourth ? `　4️⃣ ${escapeHtml(podium.fourth)}` : ''}</p>`
       : '';
     const registerBtnHtml = ev.registrationOpen
       ? `<button class="btn gold small" data-action="quick-register" data-id="${ev.id}">📝 報名</button>`
@@ -853,7 +881,7 @@ function openEventDetail(id){
   chip.className = 'type-chip ' + (ev.type==='team' ? 'team' : 'individual');
   document.getElementById('detailEventDate').textContent = fmtDate(ev.date);
   const liveBadge = document.getElementById('detailLiveBadge');
-  const hasTournament = ev.started && (ev.bracket || ev.swiss || ev.group);
+  const hasTournament = ev.started && (ev.bracket || ev.swiss || ev.group || ev.doubleElim);
   liveBadge.classList.toggle('hidden', !hasTournament);
   if(hasTournament){
     const finished = isTournamentFinished(ev);
@@ -874,9 +902,9 @@ function renderRosterDisplay(ev, filter){
   const q = (filter||"").trim().toLowerCase();
   wrap.innerHTML = "";
 
-  const tournamentBlock = (ev.started && (ev.bracket || ev.swiss || ev.group))
+  const tournamentBlock = (ev.started && (ev.bracket || ev.swiss || ev.group || ev.doubleElim))
     ? `<div class="section-block">
-        <p class="section-title main"><span class="dot"></span>${ev.format === 'swiss' ? '瑞士制積分賽' : (ev.format === 'group' ? '分組循環賽' : '賽程對戰表')}</p>
+        <p class="section-title main"><span class="dot"></span>${ev.format === 'swiss' ? '瑞士制積分賽' : (ev.format === 'group' ? '分組循環賽' : (ev.format === 'doubleElim' ? '雙敗淘汰賽' : '賽程對戰表'))}</p>
         <div id="publicTournamentDisplay"></div>
       </div>`
     : '';
@@ -902,6 +930,7 @@ function renderRosterDisplay(ev, filter){
     if(ev.started){
       if(ev.format === 'swiss' && ev.swiss) renderSwiss(ev, document.getElementById('publicTournamentDisplay'), false);
       else if(ev.format === 'group' && ev.group) renderGroupStage(ev, document.getElementById('publicTournamentDisplay'), false);
+      else if(ev.format === 'doubleElim' && ev.doubleElim) renderDoubleElim(ev, document.getElementById('publicTournamentDisplay'), false);
       else if(ev.bracket) renderBracket(ev, document.getElementById('publicTournamentDisplay'), false);
     }
     return;
@@ -944,6 +973,7 @@ function renderRosterDisplay(ev, filter){
   wrap.innerHTML = html;
   if(ev.started){
     if(ev.format === 'swiss' && ev.swiss) renderSwiss(ev, document.getElementById('publicTournamentDisplay'), false);
+    else if(ev.format === 'doubleElim' && ev.doubleElim) renderDoubleElim(ev, document.getElementById('publicTournamentDisplay'), false);
     else if(ev.bracket) renderBracket(ev, document.getElementById('publicTournamentDisplay'), false);
   }
 }
@@ -1339,6 +1369,7 @@ function generateBracket(ev, size){
   ev.format = 'elimination';
   ev.started = true;
   ev.swiss = null;
+  ev.doubleElim = null;
 }
 
 // Used by the group stage: seeds a bracket from a specific list of names
@@ -1628,6 +1659,7 @@ function generateGroupStage(ev, size){
   ev.started = true;
   ev.bracket = null;
   ev.swiss = null;
+  ev.doubleElim = null;
 }
 
 // Standings, ranked by wins first, then point differential (total scored -
@@ -1928,6 +1960,145 @@ function getDoubleElimChampion(de){
   return de.reset.picks ? (de.reset.picks['0'] || null) : null;
 }
 
+function renderDoubleElim(ev, containerEl, interactive){
+  const de = ev.doubleElim;
+  if(!containerEl) return;
+  if(!de){
+    containerEl.innerHTML = '<p class="empty-note">尚未產生賽程</p>';
+    return;
+  }
+  const k = wbRounds(de);
+  const sectionLabel = (text)=> `<p style="font-family:'Oswald',sans-serif;font-size:12px;letter-spacing:1.5px;color:var(--ink-soft);text-transform:uppercase;margin:16px 0 8px;">${text}</p>`;
+
+  let html = sectionLabel('勝部') + '<div class="bracket-wrap">';
+  for(let r=0;r<k;r++){
+    const entrants = getRoundEntrants(de.wb, r);
+    html += `<div class="bracket-round"><div class="bracket-round-label">勝部第 ${r+1} 輪</div>`;
+    for(let i=0;i<entrants.length/2;i++){
+      const a = entrants[2*i], b = entrants[2*i+1];
+      const pick = de.wb.picks[`${r}-${i}`];
+      const sc = de.wb.scores ? de.wb.scores[`${r}-${i}`] : null;
+      html += `<div class="bracket-match">`;
+      [a, b].forEach((name, idx)=>{
+        let cls = 'bracket-slot';
+        if(!name) cls += ' bye';
+        if(name && pick && name === pick) cls += ' winner';
+        const clickable = interactive && a && b && a !== b;
+        if(clickable) cls += ' clickable';
+        let inner;
+        if(!name){ inner = '輪空'; }
+        else {
+          const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+          inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+        }
+        html += `<div class="${cls}"${clickable ? ` data-bracket="wb" data-round="${r}" data-match="${i}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  html += '</div>';
+
+  const lbTotal = totalLbRounds(de);
+  if(lbTotal > 0){
+    html += sectionLabel('敗部') + '<div class="bracket-wrap">';
+    for(let lr=0; lr<lbTotal; lr++){
+      const entrants = lbRoundEntrants(de, lr);
+      html += `<div class="bracket-round"><div class="bracket-round-label">敗部第 ${lr+1} 輪</div>`;
+      for(let i=0;i<entrants.length/2;i++){
+        const a = entrants[2*i], b = entrants[2*i+1];
+        const pick = de.lb.picks[`${lr}-${i}`];
+        const sc = de.lb.scores ? de.lb.scores[`${lr}-${i}`] : null;
+        html += `<div class="bracket-match">`;
+        [a, b].forEach((name, idx)=>{
+          let cls = 'bracket-slot';
+          if(!name) cls += ' bye';
+          if(name && pick && name === pick) cls += ' winner';
+          const clickable = interactive && a && b && a !== b;
+          if(clickable) cls += ' clickable';
+          let inner;
+          if(!name){ inner = '輪空'; }
+          else {
+            const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+            inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+          }
+          html += `<div class="${cls}"${clickable ? ` data-bracket="lb" data-round="${lr}" data-match="${i}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
+        });
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+    html += '</div>';
+  }
+
+  const wbChamp = getWbChampion(de);
+  const lbChamp = getLbChampion(de);
+  if(wbChamp && lbChamp){
+    const pick = de.grandFinal.picks['0'];
+    const sc = de.grandFinal.scores ? de.grandFinal.scores['0'] : null;
+    html += `<div class="admin-subsection"><div class="sub-head"><h4>總冠軍賽</h4></div><div class="bracket-match" style="max-width:320px;">`;
+    [wbChamp, lbChamp].forEach((name, idx)=>{
+      let cls = 'bracket-slot';
+      if(pick === name) cls += ' winner';
+      const clickable = interactive && wbChamp !== lbChamp;
+      if(clickable) cls += ' clickable';
+      const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+      const inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+      html += `<div class="${cls}"${clickable ? ` data-bracket="gf" data-round="0" data-match="0" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
+    });
+    html += `</div></div>`;
+
+    if(needsBracketReset(de)){
+      const rpick = de.reset.picks['0'];
+      const rsc = de.reset.scores ? de.reset.scores['0'] : null;
+      html += `<div class="admin-subsection"><div class="sub-head"><h4>敗部逆轉：再戰一場</h4></div><div class="bracket-match" style="max-width:320px;">`;
+      [wbChamp, lbChamp].forEach((name, idx)=>{
+        let cls = 'bracket-slot';
+        if(rpick === name) cls += ' winner';
+        const clickable = interactive && wbChamp !== lbChamp;
+        if(clickable) cls += ' clickable';
+        const scoreVal = rsc ? (idx===0 ? rsc.a : rsc.b) : null;
+        const inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+        html += `<div class="${cls}"${clickable ? ` data-bracket="reset" data-round="0" data-match="0" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
+      });
+      html += `</div></div>`;
+    }
+  }
+
+  const champion = getDoubleElimChampion(de);
+  let placementInner = `<div class="bracket-champion">🏆 冠軍：${champion ? escapeHtml(champion) : '尚未產生'}</div>`;
+  if(champion){
+    const runnerUp = champion === wbChamp ? lbChamp : wbChamp;
+    if(runnerUp) placementInner += `<div class="bracket-champion" style="border-color:#C7CBD1; color:#C7CBD1; background:rgba(199,203,209,0.08);">🥈 亞軍：${escapeHtml(runnerUp)}</div>`;
+  }
+  if(lbTotal > 0){
+    const lastEntrants = lbRoundEntrants(de, lbTotal - 1);
+    const lastPick = de.lb.picks[`${lbTotal-1}-0`];
+    if(lastPick){
+      const third = lastPick === lastEntrants[0] ? lastEntrants[1] : lastEntrants[0];
+      if(third) placementInner += `<div class="bracket-champion" style="border-color:#CD7F32; color:#CD7F32; background:rgba(205,127,50,0.08);">🥉 季軍：${escapeHtml(third)}</div>`;
+    }
+  }
+  html += `<div class="placement-wrap">${placementInner}</div>`;
+
+  containerEl.innerHTML = html;
+
+  if(interactive){
+    containerEl.querySelectorAll('.bracket-slot.clickable[data-bracket]').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const kind = el.dataset.bracket;
+        const r = parseInt(el.dataset.round, 10), m = parseInt(el.dataset.match, 10);
+        const name = el.dataset.name;
+        if(kind === 'wb'){ setWbPick(de, r, m, name); }
+        else if(kind === 'lb'){ setLbPick(de, r, m, name); }
+        else if(kind === 'gf'){ de.grandFinal.picks['0'] = name; de.reset.picks = {}; de.reset.scores = {}; }
+        else if(kind === 'reset'){ de.reset.picks['0'] = name; }
+        renderDoubleElim(ev, containerEl, true);
+      });
+    });
+  }
+}
+
 
 // Beyblade X scoring: first to 4+ points wins a match. A single exchange can
 // award 1, 2, or 3 points, so the final score always has the winner at
@@ -2015,6 +2186,118 @@ function renderRefereeGroup(ev, containerEl){
         });
         showStatus('refStatusMsg', '已儲存比分。');
         renderRefereeGroup(ev, containerEl);
+      }catch(e){
+        showStatus('refStatusMsg', '儲存失敗，請檢查網路後再試一次。', true);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+function renderRefereeDoubleElim(ev, containerEl){
+  const de = ev.doubleElim;
+  if(!containerEl) return;
+  if(!de){
+    containerEl.innerHTML = '<p class="empty-note">尚未產生賽程</p>';
+    return;
+  }
+  de.wb.scores = de.wb.scores || {};
+  de.lb.scores = de.lb.scores || {};
+  let html = '<p class="referee-hint">獲勝方 4～6 分，落敗方 0～3 分。輸家第一次會掉到敗部，敗部再輸一場就淘汰。</p>';
+
+  const k = wbRounds(de);
+  html += '<div class="admin-subsection"><div class="sub-head"><h4>勝部</h4></div>';
+  for(let r=0;r<k;r++){
+    const entrants = getRoundEntrants(de.wb, r);
+    for(let i=0;i<entrants.length/2;i++){
+      const a = entrants[2*i], b = entrants[2*i+1];
+      if(!(a && b && a !== b)){
+        const only = a || b;
+        if(only) html += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
+        continue;
+      }
+      const key = `${r}-${i}`;
+      html += refereeMatchRowHtml(a, b, de.wb.picks[key], de.wb.scores[key], `wb-${r}`, i);
+    }
+  }
+  html += '</div>';
+
+  const lbTotal = totalLbRounds(de);
+  if(lbTotal > 0){
+    html += '<div class="admin-subsection"><div class="sub-head"><h4>敗部</h4></div>';
+    for(let lr=0; lr<lbTotal; lr++){
+      const entrants = lbRoundEntrants(de, lr);
+      for(let i=0;i<entrants.length/2;i++){
+        const a = entrants[2*i], b = entrants[2*i+1];
+        if(!(a && b && a !== b)){
+          const only = a || b;
+          if(only) html += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
+          continue;
+        }
+        const key = `${lr}-${i}`;
+        html += refereeMatchRowHtml(a, b, de.lb.picks[key], de.lb.scores[key], `lb-${lr}`, i);
+      }
+    }
+    html += '</div>';
+  }
+
+  const wbChamp = getWbChampion(de), lbChamp = getLbChampion(de);
+  if(wbChamp && lbChamp){
+    html += '<div class="admin-subsection"><div class="sub-head"><h4>總冠軍賽</h4></div>';
+    html += refereeMatchRowHtml(wbChamp, lbChamp, de.grandFinal.picks['0'], de.grandFinal.scores ? de.grandFinal.scores['0'] : null, 'gf', 0);
+    html += '</div>';
+    if(needsBracketReset(de)){
+      html += '<div class="admin-subsection"><div class="sub-head"><h4>敗部逆轉：再戰一場</h4></div>';
+      html += refereeMatchRowHtml(wbChamp, lbChamp, de.reset.picks['0'], de.reset.scores ? de.reset.scores['0'] : null, 'reset', 0);
+      html += '</div>';
+    }
+  }
+
+  containerEl.innerHTML = html;
+
+  containerEl.querySelectorAll('.referee-match').forEach(matchEl=>{
+    const btn = matchEl.querySelector('.referee-confirm-btn');
+    btn.addEventListener('click', async ()=>{
+      const scoreA = parseInt(matchEl.querySelector('input[data-side="a"]').value, 10);
+      const scoreB = parseInt(matchEl.querySelector('input[data-side="b"]').value, 10);
+      const errEl = matchEl.querySelector('.referee-error');
+      const err = validateBeybladeScore(scoreA, scoreB);
+      if(err){
+        errEl.textContent = err;
+        errEl.style.display = 'block';
+        return;
+      }
+      const nameA = matchEl.dataset.nameA, nameB = matchEl.dataset.nameB;
+      const winner = scoreA > scoreB ? nameA : nameB;
+      const roundVal = matchEl.dataset.round;
+      const matchVal = matchEl.dataset.match;
+      btn.disabled = true;
+      try{
+        await applyRefereeMatchUpdate(ev, freshEv=>{
+          const de2 = freshEv.doubleElim;
+          if(roundVal.startsWith('wb-')){
+            const r = parseInt(roundVal.slice(3), 10), m = parseInt(matchVal, 10);
+            de2.wb.scores = de2.wb.scores || {};
+            de2.wb.scores[`${r}-${m}`] = { a:scoreA, b:scoreB };
+            setWbPick(de2, r, m, winner);
+          } else if(roundVal.startsWith('lb-')){
+            const lr = parseInt(roundVal.slice(3), 10), m = parseInt(matchVal, 10);
+            de2.lb.scores = de2.lb.scores || {};
+            de2.lb.scores[`${lr}-${m}`] = { a:scoreA, b:scoreB };
+            setLbPick(de2, lr, m, winner);
+          } else if(roundVal === 'gf'){
+            de2.grandFinal.scores = de2.grandFinal.scores || {};
+            de2.grandFinal.scores['0'] = { a:scoreA, b:scoreB };
+            de2.grandFinal.picks['0'] = winner;
+            de2.reset.picks = {}; de2.reset.scores = {};
+          } else if(roundVal === 'reset'){
+            de2.reset.scores = de2.reset.scores || {};
+            de2.reset.scores['0'] = { a:scoreA, b:scoreB };
+            de2.reset.picks['0'] = winner;
+          }
+        });
+        showStatus('refStatusMsg', '已儲存比分。');
+        renderRefereeDoubleElim(ev, containerEl);
       }catch(e){
         showStatus('refStatusMsg', '儲存失敗，請檢查網路後再試一次。', true);
         btn.disabled = false;
@@ -2149,6 +2432,7 @@ function generateSwiss(ev, size){
   ev.format = 'swiss';
   ev.started = true;
   ev.bracket = null;
+  ev.doubleElim = null;
 }
 
 function computeSwissStandings(swiss){
@@ -2322,9 +2606,11 @@ document.getElementById('nextSwissRoundBtn').addEventListener('click', ()=>{
 // Elimination uses fixed power-of-two sizes; Swiss doesn't need that
 // constraint, so it gets a free-form number input instead.
 function toggleSizeInputForFormat(format){
-  document.getElementById('bracketSizeRow').classList.toggle('hidden', format !== 'elimination');
+  document.getElementById('bracketSizeRow').classList.toggle('hidden', !(format === 'elimination' || format === 'doubleElim'));
   document.getElementById('swissSizeRow').classList.toggle('hidden', format !== 'swiss');
   document.getElementById('groupSizeRow').classList.toggle('hidden', format !== 'group');
+  const note = document.getElementById('bracketSize48Note');
+  if(note) note.classList.toggle('hidden', format === 'doubleElim');
 }
 document.querySelectorAll('input[name="tourFormat"]').forEach(r=>{
   r.addEventListener('change', ()=> toggleSizeInputForFormat(r.value));
@@ -2341,7 +2627,7 @@ function renderBracketAdminSection(ev){
   if(ev.started){
     startBtn.textContent = '重設賽程';
     setupDiv.classList.remove('hidden');
-    const activeSize = ev.bracket && !ev.group ? ev.bracket.size : (ev.swiss ? ev.swiss.size : (ev.group ? ev.group.size : 32));
+    const activeSize = ev.bracket && !ev.group ? ev.bracket.size : (ev.swiss ? ev.swiss.size : (ev.group ? ev.group.size : (ev.doubleElim ? ev.doubleElim.size : 32)));
     document.querySelectorAll('input[name="bracketSize"]').forEach(r=>{
       r.checked = String(activeSize) === r.value;
     });
@@ -2357,6 +2643,7 @@ function renderBracketAdminSection(ev){
     document.getElementById('bracketAdminDisplay').classList.add('hidden');
     document.getElementById('swissAdminDisplay').classList.add('hidden');
     document.getElementById('groupAdminDisplay').classList.add('hidden');
+    document.getElementById('doubleElimAdminDisplay').classList.add('hidden');
     document.getElementById('nextSwissRoundBtn').classList.add('hidden');
     if(activeFormat === 'swiss'){
       document.getElementById('swissAdminDisplay').classList.remove('hidden');
@@ -2365,6 +2652,9 @@ function renderBracketAdminSection(ev){
     } else if(activeFormat === 'group'){
       document.getElementById('groupAdminDisplay').classList.remove('hidden');
       renderGroupStage(ev, document.getElementById('groupAdminDisplay'), true);
+    } else if(activeFormat === 'doubleElim'){
+      document.getElementById('doubleElimAdminDisplay').classList.remove('hidden');
+      renderDoubleElim(ev, document.getElementById('doubleElimAdminDisplay'), true);
     } else {
       document.getElementById('bracketAdminDisplay').classList.remove('hidden');
       renderBracket(ev, document.getElementById('bracketAdminDisplay'), true);
@@ -2383,6 +2673,7 @@ document.getElementById('toggleStartBtn').addEventListener('click', ()=>{
     ev.bracket = null;
     ev.swiss = null;
     ev.group = null;
+    ev.doubleElim = null;
   } else {
     ev.started = true;
   }
@@ -2414,6 +2705,7 @@ function getSelectedSize(format){
 function resolvedCapacity(ev, format, size){
   if(format === 'swiss') return size || getEntrantNames(ev).length;
   if(format === 'group') return size;
+  if(format === 'doubleElim') return nextPow2(size);
   return capacityFor(size);
 }
 
@@ -2425,6 +2717,7 @@ document.getElementById('confirmShuffleBtn').addEventListener('click', ()=>{
   syncEntrantSourceFromDOM(ev);
   if(format === 'swiss'){ generateSwiss(ev, size); }
   else if(format === 'group'){ generateGroupStage(ev, size); }
+  else if(format === 'doubleElim'){ generateDoubleElim(ev, size); }
   else { generateBracket(ev, size); }
   document.getElementById('shuffleConfirmRow').classList.add('hidden');
   renderBracketAdminSection(ev);
@@ -2438,6 +2731,7 @@ function buildManualSlotsGrid(ev, capacity){
   const existing = (ev.bracket && ev.bracket.capacity === capacity) ? ev.bracket.slots
                   : (ev.swiss && ev.swiss.size === capacity) ? ev.swiss.entrants
                   : (ev.group && ev.group.size === capacity) ? ev.group.groups.flat()
+                  : (ev.doubleElim && ev.doubleElim.capacity === capacity) ? ev.doubleElim.wb.slots
                   : [];
   const grid = document.getElementById('manualSlotsGrid');
   let html = '';
@@ -2498,6 +2792,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
     ev.started = true;
     ev.bracket = null;
     ev.group = null;
+    ev.doubleElim = null;
   } else if(format === 'group'){
     const cfg = GROUP_STAGE_CONFIG[size];
     const groups = [];
@@ -2507,6 +2802,20 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
     ev.started = true;
     ev.bracket = null;
     ev.swiss = null;
+    ev.doubleElim = null;
+  } else if(format === 'doubleElim'){
+    ev.doubleElim = {
+      size, capacity,
+      wb: { slots, picks:{}, scores:{} },
+      lb: { picks:{}, scores:{} },
+      grandFinal: { picks:{}, scores:{} },
+      reset: { picks:{}, scores:{} }
+    };
+    ev.format = 'doubleElim';
+    ev.started = true;
+    ev.bracket = null;
+    ev.swiss = null;
+    ev.group = null;
   } else {
     const realNames = slots.filter(Boolean);
     if(realNames.length === 3){
@@ -2518,6 +2827,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
     ev.started = true;
     ev.swiss = null;
     ev.group = null;
+    ev.doubleElim = null;
   }
   document.getElementById('manualAssignPanel').classList.add('hidden');
   document.getElementById('manualConfirmRow').classList.add('hidden');
@@ -2568,7 +2878,7 @@ function showRefereeEvents(){
 
 function renderRefereeEventList(){
   const wrap = document.getElementById('refereeEventListWrap');
-  const started = refereeState.events.filter(e=> e.started && (e.bracket || e.swiss || e.group));
+  const started = refereeState.events.filter(e=> e.started && (e.bracket || e.swiss || e.group || e.doubleElim));
   if(started.length === 0){
     wrap.innerHTML = '<p class="empty-note">目前沒有已經開始的賽事。</p>';
     return;
@@ -2581,7 +2891,7 @@ function renderRefereeEventList(){
         <div>
           <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span></p>
           <span class="ev-date num">${fmtDate(ev.date)}</span>
-          <p class="ev-meta">${ev.format==='swiss' ? '瑞士制' : (ev.format==='group' ? '分組循環賽' : '單淘汰賽')}</p>
+          <p class="ev-meta">${ev.format==='swiss' ? '瑞士制' : (ev.format==='group' ? '分組循環賽' : (ev.format==='doubleElim' ? '雙敗淘汰' : '單淘汰賽'))}</p>
         </div>
         <span class="go">登錄比分 →</span>
       </div>
@@ -2616,6 +2926,8 @@ function renderRefereeMatchDisplay(ev){
       container.appendChild(bracketWrap);
       renderRefereeBracket(ev, bracketWrap);
     }
+  } else if(ev.format === 'doubleElim'){
+    renderRefereeDoubleElim(ev, container);
   } else {
     renderRefereeBracket(ev, container);
   }
@@ -2767,7 +3079,7 @@ document.getElementById('addEventBtn').addEventListener('click', ()=>{
   editingState.events.push({
     id: cryptoId(), name:"新賽事", date:"", type:"individual",
     individualMain:[], individualBackup:[], mainTeams:[], backupTeams:[],
-    started:false, bracket:null, swiss:null, group:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
+    started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
   });
   renderAdminEventList();
 });
