@@ -96,6 +96,12 @@
   }
   .type-chip.individual{ background:rgba(58,199,255,0.14); color:var(--lane-blue); border:1px solid rgba(58,199,255,0.3); }
   .type-chip.team{ background:rgba(240,193,67,0.14); color:var(--lane-gold); border:1px solid rgba(240,193,67,0.3); }
+  .type-chip.live-badge{
+    background:rgba(255,59,92,0.14); color:var(--backup); border:1px solid rgba(255,59,92,0.35);
+    cursor:pointer; font-family:'Noto Sans TC',sans-serif; animation:live-pulse 1.8s ease-in-out infinite;
+  }
+  .type-chip.live-badge:hover{ background:rgba(255,59,92,0.24); }
+  @keyframes live-pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.6; } }
 
   .event-card{
     background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--arena-gold);
@@ -190,11 +196,13 @@
     display:block; font-family:'Oswald',sans-serif; font-size:11px; letter-spacing:1.5px;
     color:var(--ink-soft); margin-bottom:6px; text-transform:uppercase;
   }
-  textarea.roster-input{
-    width:100%; min-height:110px; padding:8px 10px; border:1px solid var(--line); border-radius:3px;
-    font-family:'Noto Sans TC',sans-serif; font-size:13px; resize:vertical; background:var(--paper); color:var(--ink);
+  .roster-input{
+    width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:3px;
+    font-family:'Noto Sans TC',sans-serif; font-size:13px; background:var(--paper); color:var(--ink);
   }
-  textarea.roster-input:focus, .admin-event input:focus, .admin-team input:focus{ outline:none; border-color:var(--lane-blue); box-shadow:var(--glow-cyan); }
+  textarea.roster-input{ min-height:110px; resize:vertical; }
+  .roster-input:focus{ outline:none; border-color:var(--lane-blue); box-shadow:var(--glow-cyan); }
+  .admin-event input:focus, .admin-team input:focus{ outline:none; border-color:var(--lane-blue); box-shadow:var(--glow-cyan); }
   .cols{ display:flex; gap:14px; flex-wrap:wrap; }
   .col{ flex:1; min-width:220px; }
 
@@ -205,6 +213,7 @@
   .admin-subsection > .sub-head h4{ margin:0; font-size:13px; letter-spacing:1px; font-family:'Oswald',sans-serif; text-transform:uppercase; color:var(--ink-soft); }
 
   .admin-team{ background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:14px 16px; margin-bottom:12px; }
+  .admin-team.moved{ opacity:0.55; }
   .admin-team .row{ display:flex; gap:10px; align-items:center; margin-bottom:10px; }
   .admin-team input[type=text]{ flex:1; padding:8px 10px; border:1px solid var(--line); border-radius:3px; font-size:14px; font-weight:700; background:var(--paper); color:var(--ink); }
 
@@ -253,6 +262,24 @@
   .bracket-slot.clickable{ cursor:pointer; }
   .bracket-slot.clickable:hover{ background:rgba(58,199,255,0.10); }
   .bracket-champion{ margin-top:16px; padding:12px 16px; background:rgba(240,193,67,0.10); border:1px solid var(--lane-gold); border-radius:4px; font-weight:700; color:var(--lane-gold); display:inline-block; }
+  .bracket-score{
+    float:right; font-family:'Oswald',sans-serif; font-size:12px; font-weight:700;
+    color:var(--ink-soft); background:rgba(255,255,255,0.06); padding:1px 7px; border-radius:2px;
+  }
+  .bracket-slot.winner .bracket-score{ color:var(--arena); background:rgba(0,0,0,0.25); }
+
+  .referee-match{ background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:12px 14px; margin-bottom:12px; max-width:360px; }
+  .referee-match.decided{ border-color:rgba(240,193,67,0.35); }
+  .referee-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+  .referee-name{ font-size:13.5px; color:var(--ink); }
+  .referee-name.winner{ color:var(--lane-gold); font-weight:700; }
+  .referee-row input.score-input{
+    width:56px; padding:6px 8px; border:1px solid var(--line); border-radius:3px;
+    background:var(--paper); color:var(--ink); font-family:'Oswald',sans-serif; font-size:14px; text-align:center;
+  }
+  .referee-row input.score-input:focus{ outline:none; border-color:var(--lane-blue); box-shadow:var(--glow-cyan); }
+  .referee-error{ color:var(--danger); font-size:12px; margin:6px 0 0; display:none; }
+  .referee-hint{ color:var(--ink-soft); font-size:11px; margin:0 0 8px; }
 </style>
 </head>
 <body>
@@ -266,6 +293,7 @@
     </div>
   </div>
   <nav>
+    <button id="refereeBtn">🏁 裁判登錄</button>
     <button id="toAdminBtn">後台管理</button>
   </nav>
 </header>
@@ -286,7 +314,49 @@
   <div class="event-title-block">
     <h2 id="detailEventName"></h2>
     <span class="type-chip" id="detailEventType"></span>
+    <button class="type-chip live-badge hidden" id="detailLiveBadge">🔴 賽程進行中</button>
+    <button class="btn gold small hidden" id="openRegisterBtn" style="margin-left:8px; vertical-align:middle;">📝 立即報名</button>
     <div><span class="date num" id="detailEventDate"></span></div>
+  </div>
+
+  <div id="registerFormPanel" class="hidden" style="margin-bottom:22px;">
+    <div style="background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:16px 18px;">
+      <div class="sub-head" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h4 style="margin:0; font-size:13px; letter-spacing:1px; font-family:'Oswald',sans-serif; text-transform:uppercase; color:var(--ink-soft);">報名表</h4>
+        <button class="btn secondary small" id="closeRegisterBtn">取消</button>
+      </div>
+
+      <div id="registerIndividualFields">
+        <div class="cols admin-list-editor">
+          <div class="col"><label class="field-label">姓名</label><input type="text" class="roster-input" id="regName"></div>
+          <div class="col"><label class="field-label">綽號</label><input type="text" class="roster-input" id="regNickname"></div>
+        </div>
+        <div class="cols admin-list-editor">
+          <div class="col"><label class="field-label">LINE ID</label><input type="text" class="roster-input" id="regLineId"></div>
+          <div class="col"><label class="field-label">手機</label><input type="tel" class="roster-input" id="regPhone"></div>
+        </div>
+      </div>
+
+      <div id="registerTeamFields" class="hidden">
+        <div class="cols admin-list-editor">
+          <div class="col"><label class="field-label">隊名</label><input type="text" class="roster-input" id="regTeamName"></div>
+          <div class="col"><label class="field-label">隊員綽號（每行一位）</label><textarea class="roster-input" id="regNicknames"></textarea></div>
+        </div>
+        <div class="cols admin-list-editor">
+          <div class="col"><label class="field-label">LINE ID</label><input type="text" class="roster-input" id="regTeamLineId"></div>
+          <div class="col"><label class="field-label">隊長姓名</label><input type="text" class="roster-input" id="regCaptainName"></div>
+        </div>
+        <div class="cols admin-list-editor">
+          <div class="col"><label class="field-label">隊長手機</label><input type="tel" class="roster-input" id="regCaptainPhone"></div>
+        </div>
+      </div>
+
+      <p class="referee-error" id="registerError"></p>
+      <div style="display:flex; gap:10px; align-items:center; margin-top:6px;">
+        <button class="btn gold small" id="submitRegisterBtn">送出報名</button>
+        <span class="status-msg" id="registerStatusMsg"></span>
+      </div>
+    </div>
   </div>
   <div class="search">
     <input id="teamSearchInput" type="text" placeholder="搜尋隊伍或姓名…">
@@ -310,6 +380,42 @@
   </div>
 </div>
 
+<!-- REFEREE GATE -->
+<div class="admin-wrap hidden" id="refereeGateView">
+  <div class="gate">
+    <h2>裁判登錄</h2>
+    <p style="color:var(--ink-soft);font-size:11.5px;margin:-4px 0 12px;">裁判只能登錄比賽勝負與比分，不能編輯名單或賽事設定。</p>
+    <input id="refPwInput" type="password" placeholder="請輸入裁判密碼">
+    <p id="refPwError" style="color:var(--danger);font-size:12.5px;margin:-6px 0 12px;min-height:16px;"></p>
+    <button class="btn" style="width:100%" id="refPwSubmit">登入</button>
+    <p style="color:var(--ink-soft);font-size:11.5px;margin-top:14px;">
+      如忘記密碼，請於程式碼中的 REFEREE_PASSWORD 修改。
+    </p>
+    <button class="btn secondary" style="width:100%;margin-top:6px" id="backFromRefGate">返回公開頁面</button>
+  </div>
+</div>
+
+<!-- REFEREE: EVENT LIST -->
+<div class="admin-wrap hidden" id="refereeEventList">
+  <div class="admin-toolbar">
+    <button class="btn secondary" id="backFromRefEvents">← 返回公開頁面</button>
+  </div>
+  <p class="empty-note" style="margin-bottom:14px;">只列出已經「開始比賽」的賽事，選一場開始登錄比分。</p>
+  <div id="refereeEventListWrap"></div>
+</div>
+
+<!-- REFEREE: MATCH ENTRY -->
+<div class="admin-wrap hidden" id="refereeMatchEntryView">
+  <div class="admin-toolbar">
+    <button class="btn secondary" id="backFromRefMatchEntry">← 返回賽事列表</button>
+    <span class="status-msg" id="refStatusMsg"></span>
+  </div>
+  <div class="event-title-block">
+    <h2 id="refMatchEventName" style="font-size:18px;"></h2>
+  </div>
+  <div id="refMatchDisplay" style="margin-top:12px;"></div>
+</div>
+
 <!-- ADMIN: EVENT LIST -->
 <div class="admin-wrap hidden" id="adminEventList">
   <div class="admin-toolbar">
@@ -331,6 +437,16 @@
   <div class="event-title-block">
     <h2 id="editorEventName" style="font-size:18px;"></h2>
     <span class="type-chip" id="editorEventType"></span>
+  </div>
+
+  <!-- registration management -->
+  <div class="admin-subsection" id="registrationAdminSection">
+    <div class="sub-head">
+      <h4>報名管理</h4>
+      <button class="btn secondary small" id="toggleRegistrationBtn">開放報名</button>
+    </div>
+    <p class="empty-note" id="registrationSummary" style="margin:0 0 10px;"></p>
+    <div id="registrationListWrap"></div>
   </div>
 
   <!-- individual editor -->
@@ -386,6 +502,7 @@
       <div class="type-select-row" id="formatRow">
         <label><input type="radio" name="tourFormat" value="elimination" checked> 單淘汰賽</label>
         <label><input type="radio" name="tourFormat" value="swiss"> 瑞士制</label>
+        <label id="groupFormatLabel"><input type="radio" name="tourFormat" value="group"> 分組循環賽</label>
       </div>
       <div class="type-select-row" id="bracketSizeRow">
         <label><input type="radio" name="bracketSize" value="8"> 8 人</label>
@@ -397,6 +514,14 @@
       <div id="swissSizeRow" class="hidden" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
         <label for="swissSizeInput" style="font-size:13px; color:var(--ink-soft);">參賽人數（留空＝目前正取名單全部人數）</label>
         <input type="number" id="swissSizeInput" min="2" placeholder="不限" style="width:90px; padding:6px 8px; border:1px solid var(--line); border-radius:3px; background:var(--paper); color:var(--ink); font-size:13px;">
+      </div>
+      <div class="type-select-row hidden" id="groupSizeRow">
+        <label><input type="radio" name="groupSize" value="8"> 8 人（2組4人）</label>
+        <label><input type="radio" name="groupSize" value="16"> 16 人（4組4人）</label>
+        <label><input type="radio" name="groupSize" value="24"> 24 人（8組3人）</label>
+        <label><input type="radio" name="groupSize" value="32" checked> 32 人（8組4人）</label>
+        <label><input type="radio" name="groupSize" value="36"> 36 人（12組3人）</label>
+        <label><input type="radio" name="groupSize" value="48"> 48 人（16組3人）</label>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <button class="btn gold small" id="autoShuffleBtn">🔀 隨機分配</button>
@@ -425,6 +550,7 @@
 
       <div id="bracketAdminDisplay" style="margin-top:16px;"></div>
       <div id="swissAdminDisplay" style="margin-top:16px;" class="hidden"></div>
+      <div id="groupAdminDisplay" style="margin-top:16px;" class="hidden"></div>
       <button class="btn gold small hidden" id="nextSwissRoundBtn" style="margin-top:12px;">產生下一輪對戰</button>
     </div>
   </div>
@@ -438,6 +564,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 const ADMIN_PASSWORD = "55688TSL";
+const REFEREE_PASSWORD = "TSLgggg";
 const STORAGE_KEY = "bbx-roster-data-v2-TEST";
 
 const SUPABASE_URL = "https://teymozsbdsmxnxziizoy.supabase.co";
@@ -450,6 +577,9 @@ let state = { events: [], updatedAt: null };
 let editingState = null;
 let currentEventId = null;
 let currentAdminEventId = null;
+let refereeState = null;
+let currentRefereeEventId = null;
+let currentEditorMode = 'full';
 
 // ---------- storage (Supabase) ----------
 async function loadData(){
@@ -485,6 +615,46 @@ async function persist(newState){
   state = JSON.parse(JSON.stringify(newState));
 }
 
+// Public registration submissions come from anonymous visitors, so instead
+// of writing whatever is in memory (which may be stale if someone else
+// registered a moment ago), we re-fetch the latest data right before saving.
+// Each registration is stored as its OWN row (key = reg-{eventId}-{regId})
+// instead of being merged into the big roster_data blob. This means two
+// people submitting at nearly the same moment never overwrite each other —
+// each write only touches its own row.
+function registrationKey(eventId, regId){
+  return `reg-${eventId}-${regId}`;
+}
+
+async function submitRegistration(eventId, regObject){
+  const { error } = await sb
+    .from('roster_data')
+    .insert({ key: registrationKey(eventId, regObject.id), value: regObject, updated_at: new Date().toISOString() });
+  if(error) throw error;
+}
+
+async function fetchRegistrations(eventId){
+  const { data, error } = await sb
+    .from('roster_data')
+    .select('key, value')
+    .like('key', `reg-${eventId}-%`);
+  if(error) throw error;
+  return (data || []).map(row => Object.assign({ key: row.key }, row.value));
+}
+
+async function updateRegistrationRow(key, value){
+  const { error } = await sb
+    .from('roster_data')
+    .update({ value, updated_at: new Date().toISOString() })
+    .eq('key', key);
+  if(error) throw error;
+}
+
+async function deleteRegistrationRow(key){
+  const { error } = await sb.from('roster_data').delete().eq('key', key);
+  if(error) throw error;
+}
+
 function seedData(){
   return {
     updatedAt: null,
@@ -493,7 +663,7 @@ function seedData(){
         id: cryptoId(), name:"個人賽", date:"2026-07-17", type:"individual",
         individualMain:["王小明","陳曉華","林志豪","黃美玲"],
         individualBackup:["張家豪","李佳穎"],
-        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, format:null, checkins:{}
+        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
       },
       {
         id: cryptoId(), name:"王牌團體賽", date:"2026-07-24", type:"team",
@@ -505,7 +675,7 @@ function seedData(){
         backupTeams:[
           { id: cryptoId(), name:"C隊", members:["張惠妹","周杰倫"] }
         ],
-        started:false, bracket:null, swiss:null, format:null, checkins:{}
+        started:false, bracket:null, swiss:null, group:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
       }
     ]
   };
@@ -547,9 +717,12 @@ function renderEventList(filter){
     }
     const card = document.createElement('div');
     card.className = 'event-card';
+    const liveBadge = (ev.started && (ev.bracket || ev.swiss || ev.group))
+      ? '<span class="type-chip live-badge" style="cursor:default;">🔴 賽程進行中</span>'
+      : '';
     card.innerHTML = `
       <div>
-        <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span></p>
+        <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span> ${liveBadge}</p>
         <span class="ev-date num">${fmtDate(ev.date)}</span>
         <p class="ev-meta">${meta}</p>
       </div>
@@ -573,6 +746,10 @@ function openEventDetail(id){
   chip.textContent = typeLabel(ev.type);
   chip.className = 'type-chip ' + (ev.type==='team' ? 'team' : 'individual');
   document.getElementById('detailEventDate').textContent = fmtDate(ev.date);
+  const liveBadge = document.getElementById('detailLiveBadge');
+  liveBadge.classList.toggle('hidden', !(ev.started && (ev.bracket || ev.swiss || ev.group)));
+  document.getElementById('openRegisterBtn').classList.toggle('hidden', !ev.registrationOpen);
+  document.getElementById('registerFormPanel').classList.add('hidden');
   document.getElementById('teamSearchInput').value = "";
   renderRosterDisplay(ev, "");
   document.getElementById('publicEventList').classList.add('hidden');
@@ -584,9 +761,9 @@ function renderRosterDisplay(ev, filter){
   const q = (filter||"").trim().toLowerCase();
   wrap.innerHTML = "";
 
-  const tournamentBlock = (ev.started && (ev.bracket || ev.swiss))
+  const tournamentBlock = (ev.started && (ev.bracket || ev.swiss || ev.group))
     ? `<div class="section-block">
-        <p class="section-title main"><span class="dot"></span>${ev.format === 'swiss' ? '瑞士制積分賽' : '賽程對戰表'}</p>
+        <p class="section-title main"><span class="dot"></span>${ev.format === 'swiss' ? '瑞士制積分賽' : (ev.format === 'group' ? '分組循環賽' : '賽程對戰表')}</p>
         <div id="publicTournamentDisplay"></div>
       </div>`
     : '';
@@ -611,6 +788,7 @@ function renderRosterDisplay(ev, filter){
     `;
     if(ev.started){
       if(ev.format === 'swiss' && ev.swiss) renderSwiss(ev, document.getElementById('publicTournamentDisplay'), false);
+      else if(ev.format === 'group' && ev.group) renderGroupStage(ev, document.getElementById('publicTournamentDisplay'), false);
       else if(ev.bracket) renderBracket(ev, document.getElementById('publicTournamentDisplay'), false);
     }
     return;
@@ -684,6 +862,7 @@ function renderAdminEventList(){
           </select>
           <div class="actions">
             <button class="btn secondary" data-action="manage" data-id="${ev.id}">管理名單</button>
+            <button class="btn secondary" data-action="format-settings" data-id="${ev.id}">賽制設定</button>
             <button class="btn danger" data-action="delete-event" data-id="${ev.id}">刪除</button>
           </div>
         </div>
@@ -733,7 +912,12 @@ function renderAdminEventList(){
   });
   wrap.querySelectorAll('[data-action="manage"]').forEach(el=>{
     el.addEventListener('click', e=>{
-      openRosterEditor(e.target.dataset.id);
+      openRosterEditor(e.target.dataset.id, 'full');
+    });
+  });
+  wrap.querySelectorAll('[data-action="format-settings"]').forEach(el=>{
+    el.addEventListener('click', e=>{
+      openRosterEditor(e.target.dataset.id, 'format');
     });
   });
 }
@@ -746,28 +930,40 @@ function showStatus(elId, msg, isError){
 }
 
 // ---------- ADMIN: roster editor ----------
-function openRosterEditor(eventId){
+function openRosterEditor(eventId, mode){
+  mode = mode || 'full';
+  currentEditorMode = mode;
   currentAdminEventId = eventId;
   const ev = editingState.events.find(e=>e.id===eventId);
   if(!ev) return;
-  document.getElementById('editorEventName').textContent = ev.name + (ev.date ? "　" + fmtDate(ev.date) : "");
+  document.getElementById('editorEventName').textContent = ev.name + (ev.date ? "　" + fmtDate(ev.date) : "") + (mode === 'format' ? "　·　賽制設定" : "");
   const chip = document.getElementById('editorEventType');
   chip.textContent = typeLabel(ev.type);
   chip.className = 'type-chip ' + (ev.type==='team' ? 'team' : 'individual');
 
-  if(ev.type === 'individual'){
-    document.getElementById('individualEditor').classList.remove('hidden');
-    document.getElementById('teamEditor').classList.add('hidden');
-    document.getElementById('individualMainInput').value = ev.individualMain.join('\n');
-    document.getElementById('individualBackupInput').value = ev.individualBackup.join('\n');
+  const rosterSections = ['registrationAdminSection','individualEditor','teamEditor','checkinAdminSection'];
+  const formatSections = ['bracketAdminSection'];
+  const showRoster = mode !== 'format';
+  rosterSections.forEach(id=> document.getElementById(id).classList.toggle('hidden', !showRoster));
+  formatSections.forEach(id=> document.getElementById(id).classList.toggle('hidden', showRoster));
+
+  if(showRoster){
+    if(ev.type === 'individual'){
+      document.getElementById('individualEditor').classList.remove('hidden');
+      document.getElementById('teamEditor').classList.add('hidden');
+      document.getElementById('individualMainInput').value = ev.individualMain.join('\n');
+      document.getElementById('individualBackupInput').value = ev.individualBackup.join('\n');
+    } else {
+      document.getElementById('individualEditor').classList.add('hidden');
+      document.getElementById('teamEditor').classList.remove('hidden');
+      renderTeamGroupEditor(ev, 'mainTeams', 'mainTeamsWrap');
+      renderTeamGroupEditor(ev, 'backupTeams', 'backupTeamsWrap');
+    }
+    renderCheckinSection(ev);
+    renderRegistrationAdminSection(ev);
   } else {
-    document.getElementById('individualEditor').classList.add('hidden');
-    document.getElementById('teamEditor').classList.remove('hidden');
-    renderTeamGroupEditor(ev, 'mainTeams', 'mainTeamsWrap');
-    renderTeamGroupEditor(ev, 'backupTeams', 'backupTeamsWrap');
+    renderBracketAdminSection(ev);
   }
-  renderBracketAdminSection(ev);
-  renderCheckinSection(ev);
 
   document.getElementById('adminEventList').classList.add('hidden');
   document.getElementById('adminRosterEditor').classList.remove('hidden');
@@ -871,6 +1067,99 @@ document.getElementById('refreshCheckinBtn').addEventListener('click', ()=>{
   renderCheckinSection(ev);
 });
 
+// ---------- registration management (admin) ----------
+async function renderRegistrationAdminSection(ev){
+  const toggleBtn = document.getElementById('toggleRegistrationBtn');
+  toggleBtn.textContent = ev.registrationOpen ? '停止報名' : '開放報名';
+  const wrap = document.getElementById('registrationListWrap');
+  const summary = document.getElementById('registrationSummary');
+  summary.textContent = '載入報名資料中…';
+  wrap.innerHTML = '';
+
+  let regs;
+  try{
+    regs = await fetchRegistrations(ev.id);
+  }catch(e){
+    summary.textContent = '讀取報名資料失敗，請重新整理頁面再試一次。';
+    return;
+  }
+
+  const pending = regs.filter(r=>!r.moved);
+  summary.textContent = regs.length
+    ? `共 ${regs.length} 筆報名，尚未處理 ${pending.length} 筆。`
+    : (ev.registrationOpen ? '報名已開放，目前還沒有人報名。' : '報名尚未開放。');
+  if(regs.length === 0) return;
+
+  wrap.innerHTML = regs.slice().sort((a,b)=> (b.submittedAt||'').localeCompare(a.submittedAt||'')).map(r=>{
+    const movedTag = r.moved ? ' <span style="color:var(--lane-green);font-size:11px;">已加入正取</span>' : '';
+    const timeLabel = r.submittedAt ? new Date(r.submittedAt).toLocaleString('zh-TW') : '';
+    const body = ev.type === 'individual'
+      ? `<div style="font-weight:700;font-size:14px;">${escapeHtml(r.name)}${r.nickname ? '（'+escapeHtml(r.nickname)+'）' : ''}${movedTag}</div>
+         <div class="empty-note" style="margin-top:4px;">LINE：${escapeHtml(r.lineId||'—')}　手機：${escapeHtml(r.phone||'—')}</div>
+         <div class="empty-note" style="margin-top:2px;">報名時間：${timeLabel}</div>`
+      : `<div style="font-weight:700;font-size:14px;">${escapeHtml(r.teamName)}${movedTag}</div>
+         <div class="empty-note" style="margin-top:4px;">隊員：${(r.nicknames||[]).map(escapeHtml).join('、') || '—'}</div>
+         <div class="empty-note" style="margin-top:2px;">隊長：${escapeHtml(r.captainName||'—')}　LINE：${escapeHtml(r.lineId||'—')}　手機：${escapeHtml(r.captainPhone||'—')}</div>
+         <div class="empty-note" style="margin-top:2px;">報名時間：${timeLabel}</div>`;
+    return `
+      <div class="admin-team${r.moved ? ' moved' : ''}">
+        <div class="row" style="justify-content:space-between; align-items:flex-start;">
+          <div>${body}</div>
+          <div style="display:flex; gap:8px; flex-shrink:0;">
+            ${r.moved ? '' : `<button class="btn gold small" data-action="move-reg" data-key="${escapeAttr(r.key)}">移到正取</button>`}
+            <button class="btn danger small" data-action="delete-reg" data-key="${escapeAttr(r.key)}">刪除</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  wrap.querySelectorAll('[data-action="move-reg"]').forEach(el=>{
+    el.addEventListener('click', async e=>{
+      const key = e.currentTarget.dataset.key;
+      const reg = regs.find(r=>r.key===key);
+      if(!reg) return;
+      e.currentTarget.disabled = true;
+      if(ev.type === 'individual'){
+        const label = reg.nickname ? `${reg.name}（${reg.nickname}）` : reg.name;
+        ev.individualMain.push(label);
+        document.getElementById('individualMainInput').value = ev.individualMain.join('\n');
+      } else {
+        ev.mainTeams.push({ id: cryptoId(), name: reg.teamName, members: (reg.nicknames || []).slice() });
+        renderTeamGroupEditor(ev, 'mainTeams', 'mainTeamsWrap');
+      }
+      reg.moved = true;
+      try{ await updateRegistrationRow(key, reg); }catch(err){ /* list will resync on next render */ }
+      renderRegistrationAdminSection(ev);
+    });
+  });
+  wrap.querySelectorAll('[data-action="delete-reg"]').forEach(el=>{
+    el.addEventListener('click', e=>{
+      const btn = e.currentTarget;
+      if(btn.dataset.confirming === 'true'){
+        deleteRegistrationRow(btn.dataset.key).catch(()=>{}).then(()=> renderRegistrationAdminSection(ev));
+        return;
+      }
+      btn.dataset.confirming = 'true';
+      btn.textContent = '再按一次確認';
+      btn.classList.add('confirming');
+      setTimeout(()=>{
+        if(btn.isConnected){
+          btn.dataset.confirming = 'false';
+          btn.textContent = '刪除';
+          btn.classList.remove('confirming');
+        }
+      }, 3000);
+    });
+  });
+}
+
+document.getElementById('toggleRegistrationBtn').addEventListener('click', ()=>{
+  const ev = editingState.events.find(e=>e.id===currentAdminEventId);
+  if(!ev) return;
+  ev.registrationOpen = !ev.registrationOpen;
+  renderRegistrationAdminSection(ev);
+});
+
 // ---------- tournament engine (single elimination + swiss) ----------
 function nextPow2(n){
   let p = 1;
@@ -902,6 +1191,7 @@ function getEntrantNames(ev){
 }
 
 function syncEntrantSourceFromDOM(ev){
+  if(currentEditorMode !== 'full') return; // roster fields aren't rendered in format-only mode; ev already holds the current values
   if(ev.type === 'team'){
     syncTeamGroupFromDOM(ev, 'mainTeams', 'mainTeamsWrap');
   } else {
@@ -922,11 +1212,25 @@ function buildSlotsArray(ev, size){
 function generateBracket(ev, size){
   ev.bracket = {
     size, capacity: capacityFor(size), slots: buildSlotsArray(ev, size),
-    picks: {}, roundRobinPicks: {}, finalStage: size === 48 ? 'roundrobin' : 'single'
+    picks: {}, roundRobinPicks: {}, scores: {}, roundRobinScores: {},
+    finalStage: size === 48 ? 'roundrobin' : 'single'
   };
   ev.format = 'elimination';
   ev.started = true;
   ev.swiss = null;
+}
+
+// Used by the group stage: seeds a bracket from a specific list of names
+// (the group advancers) instead of pulling straight from the roster.
+// Does NOT touch ev.format — the event stays in 'group' format, it's just
+// that ev.bracket now also exists to represent the knockout stage.
+function generateBracketFromNames(ev, names, capacity){
+  const byeCount = Math.max(capacity - names.length, 0);
+  const slots = shuffleArray(names.concat(new Array(byeCount).fill(null)));
+  ev.bracket = {
+    size: names.length, capacity, slots,
+    picks: {}, roundRobinPicks: {}, scores: {}, roundRobinScores: {}, finalStage: 'single'
+  };
 }
 
 // Halving rounds only — for the size-48 format the final 3-way round robin
@@ -966,6 +1270,11 @@ function setBracketPick(ev, round, matchIndex, name){
     const r = parseInt(k.split('-')[0], 10);
     if(r > round) delete ev.bracket.picks[k];
   });
+  ev.bracket.scores = ev.bracket.scores || {};
+  Object.keys(ev.bracket.scores).forEach(k=>{
+    const r = parseInt(k.split('-')[0], 10);
+    if(r > round) delete ev.bracket.scores[k];
+  });
 }
 
 function renderRoundRobinFinal(bracket, finalists, interactive){
@@ -984,14 +1293,17 @@ function renderRoundRobinFinal(bracket, finalists, interactive){
     }
     const key = `${i}-${j}`;
     const pick = bracket.roundRobinPicks[key];
+    const sc = bracket.roundRobinScores ? bracket.roundRobinScores[key] : null;
     if(pick) wins[pick] = (wins[pick]||0) + 1;
     matchesHtml += `<div class="bracket-match" style="margin-bottom:8px;max-width:320px;">`;
-    [a,b].forEach(name=>{
+    [a,b].forEach((name, idx)=>{
       let cls = 'bracket-slot rr-slot';
       if(pick === name) cls += ' winner';
       const clickable = interactive;
       if(clickable) cls += ' clickable';
-      matchesHtml += `<div class="${cls}"${clickable ? ` data-pair="${key}" data-name="${escapeAttr(name)}"` : ''}>${escapeHtml(name)}</div>`;
+      const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+      const inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+      matchesHtml += `<div class="${cls}"${clickable ? ` data-pair="${key}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
     });
     matchesHtml += `</div>`;
   });
@@ -1019,15 +1331,22 @@ function renderBracket(ev, containerEl, interactive){
     for(let i=0;i<entrants.length/2;i++){
       const a = entrants[2*i], b = entrants[2*i+1];
       const pick = bracket.picks[`${r}-${i}`];
+      const sc = bracket.scores ? bracket.scores[`${r}-${i}`] : null;
       html += `<div class="bracket-match">`;
-      [a, b].forEach(name=>{
+      [a, b].forEach((name, idx)=>{
         let cls = 'bracket-slot';
-        const label = name || '輪空';
         if(!name) cls += ' bye';
         if(name && pick && name === pick) cls += ' winner';
         const clickable = interactive && a && b && a !== b;
         if(clickable) cls += ' clickable';
-        html += `<div class="${cls}"${clickable ? ` data-round="${r}" data-match="${i}" data-name="${escapeAttr(name)}"` : ''}>${escapeHtml(label)}</div>`;
+        let inner;
+        if(!name){
+          inner = '輪空';
+        } else {
+          const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+          inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+        }
+        html += `<div class="${cls}"${clickable ? ` data-round="${r}" data-match="${i}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
       });
       html += `</div>`;
     }
@@ -1060,7 +1379,401 @@ function renderBracket(ev, containerEl, interactive){
   }
 }
 
-// ---------- swiss system ----------
+// ---------- group stage (循環賽：小組循環 + 樹狀複賽) ----------
+// For each supported size, defines how many people per group and how many
+// advance from each group. Chosen so total-advancers is always a clean
+// power of two, ready to feed straight into the existing bracket engine.
+const GROUP_STAGE_CONFIG = {
+  8:  { groupSize:4, advance:2 },
+  16: { groupSize:4, advance:2 },
+  24: { groupSize:3, advance:2 },
+  32: { groupSize:4, advance:2 },
+  36: { groupSize:3, advance:2 },
+  48: { groupSize:3, advance:2 }
+};
+
+// All unique pairings within a group of size n (round robin: everyone plays everyone once).
+function groupPairs(n){
+  const pairs = [];
+  for(let i=0;i<n;i++){
+    for(let j=i+1;j<n;j++) pairs.push([i,j]);
+  }
+  return pairs;
+}
+
+function generateGroupStage(ev, size){
+  const cfg = GROUP_STAGE_CONFIG[size];
+  const names = getEntrantNames(ev).slice(0, size);
+  const byeCount = Math.max(size - names.length, 0);
+  const slots = shuffleArray(names.concat(new Array(byeCount).fill(null)));
+  const groups = [];
+  for(let i=0;i<slots.length;i+=cfg.groupSize){
+    groups.push(slots.slice(i, i+cfg.groupSize));
+  }
+  ev.group = {
+    size, groupSize: cfg.groupSize, advancePerGroup: cfg.advance,
+    groups, picks: {}, scores: {}, advanceOverrides: {}
+  };
+  ev.format = 'group';
+  ev.started = true;
+  ev.bracket = null;
+  ev.swiss = null;
+}
+
+// Win counts within one group. A match against an empty ("bye") slot is an
+// automatic win for whoever showed up — no admin action needed for those.
+function computeGroupStandings(ev, groupIdx){
+  const group = ev.group.groups[groupIdx];
+  const wins = {};
+  group.forEach(n=>{ if(n) wins[n] = 0; });
+  groupPairs(group.length).forEach(([i,j], mi)=>{
+    const a = group[i], b = group[j];
+    if(a && !b){ wins[a] += 1; return; }
+    if(!a && b){ wins[b] += 1; return; }
+    if(!a && !b) return;
+    const pick = ev.group.picks[`${groupIdx}-${mi}`];
+    if(pick) wins[pick] += 1;
+  });
+  return Object.entries(wins).sort((a,b)=> b[1]-a[1]);
+}
+
+function groupComplete(ev, groupIdx){
+  const group = ev.group.groups[groupIdx];
+  return groupPairs(group.length).every(([i,j], mi)=>{
+    const a = group[i], b = group[j];
+    if(!a || !b) return true;
+    return !!ev.group.picks[`${groupIdx}-${mi}`];
+  });
+}
+
+// Returns the advancing names for a group, or null if there's a win-count
+// tie right at the cutoff that needs a human to break it.
+function getGroupAdvancers(ev, groupIdx){
+  if(ev.group.advanceOverrides[groupIdx]) return ev.group.advanceOverrides[groupIdx];
+  const standings = computeGroupStandings(ev, groupIdx);
+  const N = ev.group.advancePerGroup;
+  if(standings.length <= N) return standings.map(s=>s[0]);
+  const cutoffWin = standings[N-1][1];
+  const nextWin = standings[N][1];
+  if(cutoffWin > nextWin) return standings.slice(0, N).map(s=>s[0]);
+  return null;
+}
+
+function setGroupPick(ev, groupIdx, matchIdx, name){
+  ev.group.picks[`${groupIdx}-${matchIdx}`] = name;
+  delete ev.group.advanceOverrides[groupIdx]; // result changed, any manual override is stale
+}
+
+function renderGroupStage(ev, containerEl, interactive){
+  const group = ev.group;
+  if(!containerEl) return;
+  if(!group){
+    containerEl.innerHTML = '<p class="empty-note">尚未產生分組</p>';
+    return;
+  }
+  let html = '';
+  group.groups.forEach((g, gi)=>{
+    const pairs = groupPairs(g.length);
+    html += `<div class="admin-subsection"><div class="sub-head"><h4>第 ${gi+1} 組</h4></div>`;
+    pairs.forEach(([i,j], mi)=>{
+      const a = g[i], b = g[j];
+      if(!a || !b){
+        const only = a || b;
+        if(only) html += `<div class="bracket-match" style="max-width:320px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空勝）</div></div>`;
+        return;
+      }
+      const pick = group.picks[`${gi}-${mi}`];
+      const sc = group.scores[`${gi}-${mi}`];
+      html += `<div class="bracket-match">`;
+      [a, b].forEach((name, idx)=>{
+        let cls = 'bracket-slot';
+        if(pick === name) cls += ' winner';
+        const clickable = interactive && a !== b;
+        if(clickable) cls += ' clickable';
+        const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+        const inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+        html += `<div class="${cls}"${clickable ? ` data-group="${gi}" data-match="${mi}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
+      });
+      html += `</div>`;
+    });
+
+    const standings = computeGroupStandings(ev, gi);
+    const advancers = getGroupAdvancers(ev, gi);
+    html += `<div style="margin-top:8px; max-width:320px;">`;
+    standings.forEach(([name, w])=>{
+      const advancing = advancers && advancers.includes(name);
+      html += `<div style="display:flex;justify-content:space-between;padding:4px 6px;font-size:12.5px;${advancing ? 'color:var(--lane-gold);font-weight:700;' : 'color:var(--ink-soft);'}"><span>${escapeHtml(name)}</span><span>${w} 勝${advancing ? ' ✓ 晉級' : ''}</span></div>`;
+    });
+    html += `</div>`;
+
+    if(interactive && !advancers && groupComplete(ev, gi)){
+      html += `<div class="shuffle-confirm" style="max-width:320px;">
+        <p style="margin:0 0 8px;">這組出現平手，請手動點選 ${group.advancePerGroup} 位晉級者：</p>
+        <div class="tie-pick-wrap" data-group="${gi}">
+          ${standings.map(([name])=>`<span class="backup-chip tie-pick-chip" data-group="${gi}" data-name="${escapeAttr(name)}" style="cursor:pointer; display:inline-block; margin:3px;">${escapeHtml(name)}</span>`).join('')}
+        </div>
+        <button class="btn gold small" data-action="confirm-tie" data-group="${gi}" style="margin-top:8px;">確認晉級名單</button>
+      </div>`;
+    }
+    html += `</div>`;
+  });
+
+  const allComplete = group.groups.every((g,gi)=> groupComplete(ev, gi));
+  const allResolved = group.groups.every((g,gi)=> !!getGroupAdvancers(ev, gi));
+  const advanceTotal = group.advancePerGroup * group.groups.length;
+
+  if(ev.bracket){
+    html += `<div class="admin-subsection"><div class="sub-head"><h4>複賽對戰表（${advanceTotal} 強）</h4></div><div id="groupBracketSlot"></div></div>`;
+  } else if(interactive){
+    html += `<button class="btn gold small" id="generateGroupBracketBtn" ${(allComplete && allResolved) ? '' : 'disabled'}>產生複賽對戰表（${advanceTotal} 強）</button>`;
+    if(!allComplete) html += `<p class="empty-note" style="margin-top:6px;">還有分組比賽尚未完成。</p>`;
+    else if(!allResolved) html += `<p class="empty-note" style="margin-top:6px;">有分組出現平手，請先在上面手動選出晉級者。</p>`;
+  }
+
+  containerEl.innerHTML = html;
+
+  if(interactive){
+    containerEl.querySelectorAll('.bracket-slot.clickable').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const gi = parseInt(el.dataset.group, 10), mi = parseInt(el.dataset.match, 10);
+        setGroupPick(ev, gi, mi, el.dataset.name);
+        renderGroupStage(ev, containerEl, true);
+      });
+    });
+    containerEl.querySelectorAll('.tie-pick-wrap').forEach(wrap=>{
+      const gi = parseInt(wrap.dataset.group, 10);
+      let selected = [];
+      wrap.querySelectorAll('.tie-pick-chip').forEach(chip=>{
+        chip.addEventListener('click', ()=>{
+          const name = chip.dataset.name;
+          if(selected.includes(name)){
+            selected = selected.filter(n=>n!==name);
+            chip.style.borderColor = '';
+            chip.style.color = '';
+          } else if(selected.length < ev.group.advancePerGroup){
+            selected.push(name);
+            chip.style.borderColor = 'var(--lane-gold)';
+            chip.style.color = 'var(--lane-gold)';
+          }
+        });
+      });
+      const confirmBtn = containerEl.querySelector(`[data-action="confirm-tie"][data-group="${gi}"]`);
+      if(confirmBtn){
+        confirmBtn.addEventListener('click', ()=>{
+          if(selected.length !== ev.group.advancePerGroup){
+            alert(`請剛好選擇 ${ev.group.advancePerGroup} 位`);
+            return;
+          }
+          ev.group.advanceOverrides[gi] = selected.slice();
+          renderGroupStage(ev, containerEl, true);
+        });
+      }
+    });
+    const genBtn = containerEl.querySelector('#generateGroupBracketBtn');
+    if(genBtn && !genBtn.disabled){
+      genBtn.addEventListener('click', ()=>{
+        const allNames = [];
+        group.groups.forEach((g, gi)=> allNames.push(...getGroupAdvancers(ev, gi)));
+        generateBracketFromNames(ev, allNames, nextPow2(allNames.length));
+        renderGroupStage(ev, containerEl, true);
+      });
+    }
+  }
+
+  const bracketSlot = containerEl.querySelector('#groupBracketSlot');
+  if(bracketSlot && ev.bracket){
+    renderBracket(ev, bracketSlot, interactive);
+  }
+}
+
+// ---------- referee score validation ----------
+// Beyblade X scoring: first to 4+ points wins a match. A single exchange can
+// award 1, 2, or 3 points, so the final score always has the winner at
+// 4, 5, or 6, and the loser somewhere from 0 to 3.
+function validateBeybladeScore(scoreA, scoreB){
+  if(Number.isNaN(scoreA) || Number.isNaN(scoreB)) return '請輸入兩邊的比分';
+  if(scoreA === scoreB) return '比分不能相同，一定要分出勝負';
+  const winner = Math.max(scoreA, scoreB), loser = Math.min(scoreA, scoreB);
+  if(winner < 4 || winner > 6) return '獲勝方分數需介於 4～6 分';
+  if(loser < 0 || loser > 3) return '落敗方分數需介於 0～3 分';
+  return null;
+}
+
+function refereeMatchRowHtml(a, b, pick, existingScore, roundIdx, matchIdx){
+  const sa = existingScore ? existingScore.a : '';
+  const sb = existingScore ? existingScore.b : '';
+  return `
+    <div class="referee-match${pick ? ' decided' : ''}" data-round="${roundIdx}" data-match="${matchIdx}" data-name-a="${escapeAttr(a)}" data-name-b="${escapeAttr(b)}">
+      <div class="referee-row">
+        <span class="referee-name${pick===a?' winner':''}">${escapeHtml(a)}</span>
+        <input type="number" class="score-input" data-side="a" min="0" max="6" value="${sa}">
+      </div>
+      <div class="referee-row">
+        <span class="referee-name${pick===b?' winner':''}">${escapeHtml(b)}</span>
+        <input type="number" class="score-input" data-side="b" min="0" max="6" value="${sb}">
+      </div>
+      <button class="btn gold small referee-confirm-btn">${pick ? '更新比分' : '確認比分'}</button>
+      <p class="referee-error"></p>
+    </div>
+  `;
+}
+
+function renderRefereeGroup(ev, containerEl){
+  const group = ev.group;
+  if(!containerEl) return;
+  if(!group){
+    containerEl.innerHTML = '<p class="empty-note">尚未產生分組</p>';
+    return;
+  }
+  group.scores = group.scores || {};
+  let html = '<p class="referee-hint">獲勝方 4～6 分，落敗方 0～3 分。輸入比分後按確認即可自動計入該組勝場。</p>';
+  group.groups.forEach((g, gi)=>{
+    const pairs = groupPairs(g.length);
+    html += `<div class="admin-subsection"><div class="sub-head"><h4>第 ${gi+1} 組</h4></div>`;
+    pairs.forEach(([i,j], mi)=>{
+      const a = g[i], b = g[j];
+      if(!a || !b){
+        const only = a || b;
+        if(only) html += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空勝）</div></div>`;
+        return;
+      }
+      const key = `${gi}-${mi}`;
+      html += refereeMatchRowHtml(a, b, group.picks[key], group.scores[key], gi, mi);
+    });
+    const standings = computeGroupStandings(ev, gi);
+    html += `<div style="margin-top:8px; max-width:360px;">`;
+    standings.forEach(([name, w])=>{
+      html += `<div style="display:flex;justify-content:space-between;padding:4px 6px;font-size:12.5px;color:var(--ink-soft);"><span>${escapeHtml(name)}</span><span>${w} 勝</span></div>`;
+    });
+    html += `</div></div>`;
+  });
+  containerEl.innerHTML = html;
+
+  containerEl.querySelectorAll('.referee-match').forEach(matchEl=>{
+    const btn = matchEl.querySelector('.referee-confirm-btn');
+    btn.addEventListener('click', async ()=>{
+      const scoreA = parseInt(matchEl.querySelector('input[data-side="a"]').value, 10);
+      const scoreB = parseInt(matchEl.querySelector('input[data-side="b"]').value, 10);
+      const errEl = matchEl.querySelector('.referee-error');
+      const err = validateBeybladeScore(scoreA, scoreB);
+      if(err){
+        errEl.textContent = err;
+        errEl.style.display = 'block';
+        return;
+      }
+      const gi = parseInt(matchEl.dataset.round, 10), mi = parseInt(matchEl.dataset.match, 10);
+      const winner = scoreA > scoreB ? matchEl.dataset.nameA : matchEl.dataset.nameB;
+      btn.disabled = true;
+      try{
+        await applyRefereeMatchUpdate(ev, freshEv=>{
+          freshEv.group.scores = freshEv.group.scores || {};
+          freshEv.group.scores[`${gi}-${mi}`] = { a:scoreA, b:scoreB };
+          setGroupPick(freshEv, gi, mi, winner);
+        });
+        showStatus('refStatusMsg', '已儲存比分。');
+        renderRefereeGroup(ev, containerEl);
+      }catch(e){
+        showStatus('refStatusMsg', '儲存失敗，請檢查網路後再試一次。', true);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+function renderRefereeBracket(ev, containerEl){
+  const bracket = ev.bracket;
+  if(!containerEl) return;
+  if(!bracket){
+    containerEl.innerHTML = '<p class="empty-note">尚未產生賽程</p>';
+    return;
+  }
+  bracket.scores = bracket.scores || {};
+  bracket.roundRobinScores = bracket.roundRobinScores || {};
+  const rounds = totalRounds(bracket);
+  let html = '<p class="referee-hint">獲勝方 4～6 分，落敗方 0～3 分。輸入比分後按確認即可自動晉級。</p>';
+  html += '<div class="bracket-wrap">';
+  for(let r=0;r<rounds;r++){
+    const entrants = getRoundEntrants(bracket, r);
+    html += `<div class="bracket-round"><div class="bracket-round-label">第 ${r+1} 輪</div>`;
+    for(let i=0;i<entrants.length/2;i++){
+      const a = entrants[2*i], b = entrants[2*i+1];
+      if(!(a && b && a !== b)){
+        const only = a || b;
+        html += `<div class="bracket-match"><div class="bracket-slot${only?' winner':' bye'}">${only ? escapeHtml(only)+'（輪空晉級）' : '尚未決定'}</div></div>`;
+        continue;
+      }
+      const key = `${r}-${i}`;
+      html += refereeMatchRowHtml(a, b, bracket.picks[key], bracket.scores[key], r, i);
+    }
+    html += `</div>`;
+  }
+  html += '</div>';
+  if(bracket.finalStage === 'roundrobin'){
+    const finalists = getRoundEntrants(bracket, rounds);
+    const pairs = [[0,1],[0,2],[1,2]];
+    html += '<div class="admin-subsection"><div class="sub-head"><h4>三強循環賽</h4></div>';
+    pairs.forEach(([i,j])=>{
+      const a = finalists[i], b = finalists[j];
+      if(!a && !b) return;
+      if(!a || !b){
+        html += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(a||b)}（輪空晉級）</div></div>`;
+        return;
+      }
+      const key = `${i}-${j}`;
+      html += refereeMatchRowHtml(a, b, bracket.roundRobinPicks[key], bracket.roundRobinScores[key], 'rr', key);
+    });
+    html += '</div>';
+  } else {
+    const champion = getRoundEntrants(bracket, rounds)[0];
+    html += `<div class="bracket-champion">🏆 冠軍：${champion ? escapeHtml(champion) : '尚未產生'}</div>`;
+  }
+  containerEl.innerHTML = html;
+
+  containerEl.querySelectorAll('.referee-match').forEach(matchEl=>{
+    const btn = matchEl.querySelector('.referee-confirm-btn');
+    btn.addEventListener('click', async ()=>{
+      const inputA = matchEl.querySelector('input[data-side="a"]');
+      const inputB = matchEl.querySelector('input[data-side="b"]');
+      const scoreA = parseInt(inputA.value, 10);
+      const scoreB = parseInt(inputB.value, 10);
+      const errEl = matchEl.querySelector('.referee-error');
+      const err = validateBeybladeScore(scoreA, scoreB);
+      if(err){
+        errEl.textContent = err;
+        errEl.style.display = 'block';
+        return;
+      }
+      const nameA = matchEl.dataset.nameA;
+      const nameB = matchEl.dataset.nameB;
+      const winner = scoreA > scoreB ? nameA : nameB;
+      const roundVal = matchEl.dataset.round;
+      const matchVal = matchEl.dataset.match;
+      btn.disabled = true;
+      try{
+        await applyRefereeMatchUpdate(ev, freshEv=>{
+          if(roundVal === 'rr'){
+            freshEv.bracket.roundRobinScores = freshEv.bracket.roundRobinScores || {};
+            freshEv.bracket.roundRobinPicks = freshEv.bracket.roundRobinPicks || {};
+            freshEv.bracket.roundRobinScores[matchVal] = { a:scoreA, b:scoreB };
+            freshEv.bracket.roundRobinPicks[matchVal] = winner;
+          } else {
+            const r = parseInt(roundVal, 10), m = parseInt(matchVal, 10);
+            freshEv.bracket.scores = freshEv.bracket.scores || {};
+            freshEv.bracket.scores[`${r}-${m}`] = { a:scoreA, b:scoreB };
+            setBracketPick(freshEv, r, m, winner);
+          }
+        });
+        showStatus('refStatusMsg', '已儲存比分。');
+        renderRefereeBracket(ev, containerEl);
+      }catch(e){
+        showStatus('refStatusMsg', '儲存失敗，請檢查網路後再試一次。', true);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+
 // Swiss doesn't need a power-of-two bracket size like elimination does — any
 // entrant count works. size=null/0 means "use everyone currently in the
 // 正取 list". Only an odd total gets a single automatic bye.
@@ -1143,11 +1856,13 @@ function renderSwiss(ev, containerEl, interactive){
         html += `<div class="bracket-match" style="margin-bottom:8px;max-width:320px;"><div class="bracket-slot winner">${escapeHtml(m.a)}（輪空晉級）</div></div>`;
       } else {
         html += `<div class="bracket-match" style="margin-bottom:8px;max-width:320px;">`;
-        [m.a, m.b].forEach(name=>{
+        [m.a, m.b].forEach((name, idx)=>{
           let cls = 'bracket-slot';
           if(m.winner === name) cls += ' winner';
           if(interactive) cls += ' clickable';
-          html += `<div class="${cls}"${interactive ? ` data-round="${ri}" data-match="${mi}" data-name="${escapeAttr(name)}"` : ''}>${escapeHtml(name)}</div>`;
+          const scoreVal = m.scoreA !== undefined ? (idx===0 ? m.scoreA : m.scoreB) : null;
+          const inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+          html += `<div class="${cls}"${interactive ? ` data-round="${ri}" data-match="${mi}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
         });
         html += `</div>`;
       }
@@ -1173,6 +1888,64 @@ function renderSwiss(ev, containerEl, interactive){
   }
 }
 
+function renderRefereeSwiss(ev, containerEl){
+  const swiss = ev.swiss;
+  if(!containerEl) return;
+  if(!swiss){
+    containerEl.innerHTML = '<p class="empty-note">尚未產生賽程</p>';
+    return;
+  }
+  let html = '<p class="referee-hint">獲勝方 4～6 分，落敗方 0～3 分。輸入比分後按確認即可記錄勝負。</p>';
+  swiss.rounds.forEach((round, ri)=>{
+    html += `<div class="admin-subsection"><div class="sub-head"><h4>第 ${ri+1} 輪</h4></div>`;
+    round.forEach((m, mi)=>{
+      if(!m.b){
+        html += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(m.a)}（輪空晉級）</div></div>`;
+      } else {
+        html += refereeMatchRowHtml(m.a, m.b, m.winner, (m.scoreA !== undefined ? { a:m.scoreA, b:m.scoreB } : null), ri, mi);
+      }
+    });
+    html += `</div>`;
+  });
+  const standings = computeSwissStandings(swiss);
+  html += `<div class="admin-subsection"><div class="sub-head"><h4>積分榜</h4></div>`;
+  standings.forEach((s,i)=>{
+    html += `<div style="display:flex;justify-content:space-between;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px;max-width:320px;"><span>${i+1}. ${escapeHtml(s.name)}</span><span style="color:var(--lane-gold);font-weight:700;">${s.score} 勝</span></div>`;
+  });
+  html += `</div>`;
+  containerEl.innerHTML = html;
+
+  containerEl.querySelectorAll('.referee-match').forEach(matchEl=>{
+    const btn = matchEl.querySelector('.referee-confirm-btn');
+    btn.addEventListener('click', async ()=>{
+      const scoreA = parseInt(matchEl.querySelector('input[data-side="a"]').value, 10);
+      const scoreB = parseInt(matchEl.querySelector('input[data-side="b"]').value, 10);
+      const errEl = matchEl.querySelector('.referee-error');
+      const err = validateBeybladeScore(scoreA, scoreB);
+      if(err){
+        errEl.textContent = err;
+        errEl.style.display = 'block';
+        return;
+      }
+      const ri = parseInt(matchEl.dataset.round, 10), mi = parseInt(matchEl.dataset.match, 10);
+      btn.disabled = true;
+      try{
+        await applyRefereeMatchUpdate(ev, freshEv=>{
+          const m = freshEv.swiss.rounds[ri][mi];
+          m.scoreA = scoreA;
+          m.scoreB = scoreB;
+          m.winner = scoreA > scoreB ? m.a : m.b;
+        });
+        showStatus('refStatusMsg', '已儲存比分。');
+        renderRefereeSwiss(ev, containerEl);
+      }catch(e){
+        showStatus('refStatusMsg', '儲存失敗，請檢查網路後再試一次。', true);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
 function updateNextRoundButtonState(ev){
   const btn = document.getElementById('nextSwissRoundBtn');
   const swiss = ev.swiss;
@@ -1195,8 +1968,9 @@ document.getElementById('nextSwissRoundBtn').addEventListener('click', ()=>{
 // Elimination uses fixed power-of-two sizes; Swiss doesn't need that
 // constraint, so it gets a free-form number input instead.
 function toggleSizeInputForFormat(format){
-  document.getElementById('bracketSizeRow').classList.toggle('hidden', format === 'swiss');
+  document.getElementById('bracketSizeRow').classList.toggle('hidden', format !== 'elimination');
   document.getElementById('swissSizeRow').classList.toggle('hidden', format !== 'swiss');
+  document.getElementById('groupSizeRow').classList.toggle('hidden', format !== 'group');
 }
 document.querySelectorAll('input[name="tourFormat"]').forEach(r=>{
   r.addEventListener('change', ()=> toggleSizeInputForFormat(r.value));
@@ -1208,11 +1982,16 @@ function renderBracketAdminSection(ev){
   document.getElementById('shuffleConfirmRow').classList.add('hidden');
   document.getElementById('manualAssignPanel').classList.add('hidden');
   document.getElementById('manualConfirmRow').classList.add('hidden');
+  // 分組循環賽 only makes sense for individual events
+  document.getElementById('groupFormatLabel').classList.toggle('hidden', ev.type !== 'individual');
   if(ev.started){
     startBtn.textContent = '重設賽程';
     setupDiv.classList.remove('hidden');
-    const activeSize = ev.bracket ? ev.bracket.size : (ev.swiss ? ev.swiss.size : 32);
+    const activeSize = ev.bracket && !ev.group ? ev.bracket.size : (ev.swiss ? ev.swiss.size : (ev.group ? ev.group.size : 32));
     document.querySelectorAll('input[name="bracketSize"]').forEach(r=>{
+      r.checked = String(activeSize) === r.value;
+    });
+    document.querySelectorAll('input[name="groupSize"]').forEach(r=>{
       r.checked = String(activeSize) === r.value;
     });
     document.getElementById('swissSizeInput').value = ev.swiss ? ev.swiss.size : '';
@@ -1221,15 +2000,19 @@ function renderBracketAdminSection(ev){
       r.checked = activeFormat === r.value;
     });
     toggleSizeInputForFormat(activeFormat);
+    document.getElementById('bracketAdminDisplay').classList.add('hidden');
+    document.getElementById('swissAdminDisplay').classList.add('hidden');
+    document.getElementById('groupAdminDisplay').classList.add('hidden');
+    document.getElementById('nextSwissRoundBtn').classList.add('hidden');
     if(activeFormat === 'swiss'){
-      document.getElementById('bracketAdminDisplay').classList.add('hidden');
       document.getElementById('swissAdminDisplay').classList.remove('hidden');
       renderSwiss(ev, document.getElementById('swissAdminDisplay'), true);
       updateNextRoundButtonState(ev);
+    } else if(activeFormat === 'group'){
+      document.getElementById('groupAdminDisplay').classList.remove('hidden');
+      renderGroupStage(ev, document.getElementById('groupAdminDisplay'), true);
     } else {
-      document.getElementById('swissAdminDisplay').classList.add('hidden');
       document.getElementById('bracketAdminDisplay').classList.remove('hidden');
-      document.getElementById('nextSwissRoundBtn').classList.add('hidden');
       renderBracket(ev, document.getElementById('bracketAdminDisplay'), true);
     }
   } else {
@@ -1245,6 +2028,7 @@ document.getElementById('toggleStartBtn').addEventListener('click', ()=>{
     ev.started = false;
     ev.bracket = null;
     ev.swiss = null;
+    ev.group = null;
   } else {
     ev.started = true;
   }
@@ -1268,10 +2052,14 @@ function getSelectedSize(format){
     const v = parseInt(document.getElementById('swissSizeInput').value, 10);
     return (v && v > 1) ? v : null;
   }
+  if(format === 'group'){
+    return parseInt(document.querySelector('input[name="groupSize"]:checked').value, 10);
+  }
   return parseInt(document.querySelector('input[name="bracketSize"]:checked').value, 10);
 }
 function resolvedCapacity(ev, format, size){
   if(format === 'swiss') return size || getEntrantNames(ev).length;
+  if(format === 'group') return size;
   return capacityFor(size);
 }
 
@@ -1281,7 +2069,9 @@ document.getElementById('confirmShuffleBtn').addEventListener('click', ()=>{
   const format = getSelectedFormat();
   const size = getSelectedSize(format);
   syncEntrantSourceFromDOM(ev);
-  if(format === 'swiss'){ generateSwiss(ev, size); } else { generateBracket(ev, size); }
+  if(format === 'swiss'){ generateSwiss(ev, size); }
+  else if(format === 'group'){ generateGroupStage(ev, size); }
+  else { generateBracket(ev, size); }
   document.getElementById('shuffleConfirmRow').classList.add('hidden');
   renderBracketAdminSection(ev);
 });
@@ -1292,7 +2082,9 @@ document.getElementById('confirmShuffleBtn').addEventListener('click', ()=>{
 function buildManualSlotsGrid(ev, capacity){
   const names = getEntrantNames(ev);
   const existing = (ev.bracket && ev.bracket.capacity === capacity) ? ev.bracket.slots
-                  : (ev.swiss && ev.swiss.size === capacity) ? ev.swiss.entrants : [];
+                  : (ev.swiss && ev.swiss.size === capacity) ? ev.swiss.entrants
+                  : (ev.group && ev.group.size === capacity) ? ev.group.groups.flat()
+                  : [];
   const grid = document.getElementById('manualSlotsGrid');
   let html = '';
   for(let i=0;i<capacity;i++){
@@ -1351,11 +2143,22 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
     ev.format = 'swiss';
     ev.started = true;
     ev.bracket = null;
+    ev.group = null;
+  } else if(format === 'group'){
+    const cfg = GROUP_STAGE_CONFIG[size];
+    const groups = [];
+    for(let i=0;i<slots.length;i+=cfg.groupSize){ groups.push(slots.slice(i, i+cfg.groupSize)); }
+    ev.group = { size, groupSize: cfg.groupSize, advancePerGroup: cfg.advance, groups, picks:{}, scores:{}, advanceOverrides:{} };
+    ev.format = 'group';
+    ev.started = true;
+    ev.bracket = null;
+    ev.swiss = null;
   } else {
-    ev.bracket = { size, capacity, slots, picks:{}, roundRobinPicks:{}, finalStage: size===48 ? 'roundrobin' : 'single' };
+    ev.bracket = { size, capacity, slots, picks:{}, roundRobinPicks:{}, scores:{}, roundRobinScores:{}, finalStage: size===48 ? 'roundrobin' : 'single' };
     ev.format = 'elimination';
     ev.started = true;
     ev.swiss = null;
+    ev.group = null;
   }
   document.getElementById('manualAssignPanel').classList.add('hidden');
   document.getElementById('manualConfirmRow').classList.add('hidden');
@@ -1363,19 +2166,19 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
 });
 
 // ---------- navigation ----------
+const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView'];
+function hideAllViews(){
+  TOP_LEVEL_VIEWS.forEach(id=> document.getElementById(id).classList.add('hidden'));
+  document.getElementById('publicFooter').classList.add('hidden');
+}
+
 function showPublic(){
-  document.getElementById('gateView').classList.add('hidden');
-  document.getElementById('adminEventList').classList.add('hidden');
-  document.getElementById('adminRosterEditor').classList.add('hidden');
+  hideAllViews();
   document.getElementById('publicFooter').classList.remove('hidden');
   if(currentEventId){ openEventDetail(currentEventId); } else { showEventList(); }
 }
 function showGate(){
-  document.getElementById('publicEventList').classList.add('hidden');
-  document.getElementById('publicEventDetail').classList.add('hidden');
-  document.getElementById('publicFooter').classList.add('hidden');
-  document.getElementById('adminEventList').classList.add('hidden');
-  document.getElementById('adminRosterEditor').classList.add('hidden');
+  hideAllViews();
   document.getElementById('gateView').classList.remove('hidden');
   document.getElementById('pwInput').value = "";
   document.getElementById('pwError').textContent = "";
@@ -1383,34 +2186,201 @@ function showGate(){
 }
 function showAdminEvents(){
   editingState = JSON.parse(JSON.stringify(state));
-  document.getElementById('publicEventList').classList.add('hidden');
-  document.getElementById('publicEventDetail').classList.add('hidden');
-  document.getElementById('publicFooter').classList.add('hidden');
-  document.getElementById('gateView').classList.add('hidden');
-  document.getElementById('adminRosterEditor').classList.add('hidden');
+  hideAllViews();
   document.getElementById('adminEventList').classList.remove('hidden');
   renderAdminEventList();
 }
 
+// ---------- referee (score entry only, no roster/event editing) ----------
+function showRefereeGate(){
+  hideAllViews();
+  document.getElementById('refereeGateView').classList.remove('hidden');
+  document.getElementById('refPwInput').value = "";
+  document.getElementById('refPwError').textContent = "";
+  document.getElementById('refPwInput').focus();
+}
+
+function showRefereeEvents(){
+  refereeState = JSON.parse(JSON.stringify(state));
+  hideAllViews();
+  document.getElementById('refereeEventList').classList.remove('hidden');
+  renderRefereeEventList();
+}
+
+function renderRefereeEventList(){
+  const wrap = document.getElementById('refereeEventListWrap');
+  const started = refereeState.events.filter(e=> e.started && (e.bracket || e.swiss || e.group));
+  if(started.length === 0){
+    wrap.innerHTML = '<p class="empty-note">目前沒有已經開始的賽事。</p>';
+    return;
+  }
+  wrap.innerHTML = started
+    .slice()
+    .sort((a,b)=> (b.date||"").localeCompare(a.date||""))
+    .map(ev=>`
+      <div class="event-card" data-id="${ev.id}">
+        <div>
+          <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span></p>
+          <span class="ev-date num">${fmtDate(ev.date)}</span>
+          <p class="ev-meta">${ev.format==='swiss' ? '瑞士制' : (ev.format==='group' ? '分組循環賽' : '單淘汰賽')}</p>
+        </div>
+        <span class="go">登錄比分 →</span>
+      </div>
+    `).join('');
+  wrap.querySelectorAll('.event-card').forEach(el=>{
+    el.addEventListener('click', ()=> openRefereeMatchEntry(el.dataset.id));
+  });
+}
+
+function openRefereeMatchEntry(id){
+  currentRefereeEventId = id;
+  const ev = refereeState.events.find(e=>e.id===id);
+  if(!ev) return;
+  document.getElementById('refMatchEventName').textContent = ev.name + (ev.date ? "　" + fmtDate(ev.date) : "");
+  hideAllViews();
+  document.getElementById('refereeMatchEntryView').classList.remove('hidden');
+  renderRefereeMatchDisplay(ev);
+}
+
+function renderRefereeMatchDisplay(ev){
+  const container = document.getElementById('refMatchDisplay');
+  if(ev.format === 'swiss'){
+    renderRefereeSwiss(ev, container);
+  } else if(ev.format === 'group'){
+    renderRefereeGroup(ev, container);
+    if(ev.bracket){
+      const heading = document.createElement('div');
+      heading.className = 'admin-subsection';
+      heading.innerHTML = '<div class="sub-head"><h4>複賽淘汰賽</h4></div>';
+      container.appendChild(heading);
+      const bracketWrap = document.createElement('div');
+      container.appendChild(bracketWrap);
+      renderRefereeBracket(ev, bracketWrap);
+    }
+  } else {
+    renderRefereeBracket(ev, container);
+  }
+}
+
+// Two or three referees can be entering scores at nearly the same moment.
+// Instead of saving whatever this browser's (possibly stale) copy of the
+// whole event looks like, we re-fetch the latest data right before saving,
+// apply only this one match's result to that fresh copy, and save that.
+// This means Referee A's save can no longer wipe out a match Referee B
+// already recorded a moment earlier.
+async function applyRefereeMatchUpdate(ev, applyFn){
+  const { data, error } = await sb
+    .from('roster_data')
+    .select('value')
+    .eq('key', STORAGE_KEY)
+    .maybeSingle();
+  if(error) throw error;
+  const freshState = (data && data.value) ? data.value : JSON.parse(JSON.stringify(state));
+  const freshEv = freshState.events.find(e=>e.id===ev.id);
+  if(!freshEv) throw new Error('event not found');
+  applyFn(freshEv);
+  await persist(freshState);
+  refereeState = JSON.parse(JSON.stringify(freshState));
+  Object.assign(ev, freshEv);
+}
+
 document.getElementById('logoHome').addEventListener('click', ()=>{
-  document.getElementById('gateView').classList.add('hidden');
-  document.getElementById('adminEventList').classList.add('hidden');
-  document.getElementById('adminRosterEditor').classList.add('hidden');
+  hideAllViews();
   document.getElementById('publicFooter').classList.remove('hidden');
   showEventList();
 });
 document.getElementById('toAdminBtn').addEventListener('click', showGate);
+document.getElementById('refereeBtn').addEventListener('click', showRefereeGate);
 document.getElementById('backFromGate').addEventListener('click', showPublic);
+document.getElementById('backFromRefGate').addEventListener('click', showPublic);
 document.getElementById('backFromAdminEvents').addEventListener('click', showPublic);
+document.getElementById('backFromRefEvents').addEventListener('click', showPublic);
+document.getElementById('backFromRefMatchEntry').addEventListener('click', showRefereeEvents);
 document.getElementById('backToEventsBtn').addEventListener('click', showEventList);
+document.getElementById('detailLiveBadge').addEventListener('click', ()=>{
+  const target = document.getElementById('publicTournamentDisplay');
+  if(target) target.scrollIntoView({ behavior:'smooth', block:'start' });
+});
+
+// ---------- public registration form ----------
+function clearRegisterForm(){
+  ['regName','regNickname','regLineId','regPhone','regTeamName','regNicknames','regTeamLineId','regCaptainName','regCaptainPhone'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  document.getElementById('registerError').style.display = 'none';
+}
+
+document.getElementById('openRegisterBtn').addEventListener('click', ()=>{
+  const ev = state.events.find(e=>e.id===currentEventId);
+  if(!ev) return;
+  document.getElementById('registerIndividualFields').classList.toggle('hidden', ev.type !== 'individual');
+  document.getElementById('registerTeamFields').classList.toggle('hidden', ev.type !== 'team');
+  document.getElementById('registerFormPanel').classList.remove('hidden');
+  document.getElementById('registerFormPanel').scrollIntoView({ behavior:'smooth', block:'start' });
+});
+document.getElementById('closeRegisterBtn').addEventListener('click', ()=>{
+  document.getElementById('registerFormPanel').classList.add('hidden');
+});
+
+document.getElementById('submitRegisterBtn').addEventListener('click', async ()=>{
+  const ev = state.events.find(e=>e.id===currentEventId);
+  if(!ev) return;
+  const errEl = document.getElementById('registerError');
+  errEl.style.display = 'none';
+  let regObject;
+  if(ev.type === 'individual'){
+    const name = document.getElementById('regName').value.trim();
+    if(!name){ errEl.textContent = '請填寫姓名'; errEl.style.display = 'block'; return; }
+    regObject = {
+      id: cryptoId(),
+      name,
+      nickname: document.getElementById('regNickname').value.trim(),
+      lineId: document.getElementById('regLineId').value.trim(),
+      phone: document.getElementById('regPhone').value.trim(),
+      submittedAt: new Date().toISOString(),
+      moved: false
+    };
+  } else {
+    const teamName = document.getElementById('regTeamName').value.trim();
+    if(!teamName){ errEl.textContent = '請填寫隊名'; errEl.style.display = 'block'; return; }
+    regObject = {
+      id: cryptoId(),
+      teamName,
+      nicknames: document.getElementById('regNicknames').value.split('\n').map(s=>s.trim()).filter(Boolean),
+      lineId: document.getElementById('regTeamLineId').value.trim(),
+      captainName: document.getElementById('regCaptainName').value.trim(),
+      captainPhone: document.getElementById('regCaptainPhone').value.trim(),
+      submittedAt: new Date().toISOString(),
+      moved: false
+    };
+  }
+  const btn = document.getElementById('submitRegisterBtn');
+  btn.disabled = true;
+  btn.textContent = '送出中…';
+  try{
+    await submitRegistration(currentEventId, regObject);
+    showStatus('registerStatusMsg', '報名成功！感謝您的報名。');
+    document.getElementById('registerFormPanel').classList.add('hidden');
+    clearRegisterForm();
+  }catch(e){
+    errEl.textContent = '送出失敗，請檢查網路後再試一次。';
+    errEl.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = '送出報名';
+});
+
 document.getElementById('backFromRosterEditor').addEventListener('click', ()=>{
   const ev = editingState.events.find(e=>e.id===currentAdminEventId);
-  if(ev && ev.type === 'team'){
-    syncTeamGroupFromDOM(ev, 'mainTeams', 'mainTeamsWrap');
-    syncTeamGroupFromDOM(ev, 'backupTeams', 'backupTeamsWrap');
-  } else if(ev && ev.type === 'individual'){
-    ev.individualMain = document.getElementById('individualMainInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
-    ev.individualBackup = document.getElementById('individualBackupInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(ev && currentEditorMode === 'full'){
+    if(ev.type === 'team'){
+      syncTeamGroupFromDOM(ev, 'mainTeams', 'mainTeamsWrap');
+      syncTeamGroupFromDOM(ev, 'backupTeams', 'backupTeamsWrap');
+    } else if(ev.type === 'individual'){
+      ev.individualMain = document.getElementById('individualMainInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
+      ev.individualBackup = document.getElementById('individualBackupInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    }
   }
   document.getElementById('adminRosterEditor').classList.add('hidden');
   document.getElementById('adminEventList').classList.remove('hidden');
@@ -1422,6 +2392,14 @@ document.getElementById('pwSubmit').addEventListener('click', ()=>{
   if(val === ADMIN_PASSWORD){ showAdminEvents(); }
   else{ document.getElementById('pwError').textContent = '密碼錯誤，請再試一次。'; }
 });
+document.getElementById('refPwSubmit').addEventListener('click', ()=>{
+  const val = document.getElementById('refPwInput').value;
+  if(val === REFEREE_PASSWORD){ showRefereeEvents(); }
+  else{ document.getElementById('refPwError').textContent = '密碼錯誤，請再試一次。'; }
+});
+document.getElementById('refPwInput').addEventListener('keydown', e=>{
+  if(e.key==='Enter') document.getElementById('refPwSubmit').click();
+});
 document.getElementById('pwInput').addEventListener('keydown', e=>{
   if(e.key==='Enter') document.getElementById('pwSubmit').click();
 });
@@ -1430,7 +2408,7 @@ document.getElementById('addEventBtn').addEventListener('click', ()=>{
   editingState.events.push({
     id: cryptoId(), name:"新賽事", date:"", type:"individual",
     individualMain:[], individualBackup:[], mainTeams:[], backupTeams:[],
-    started:false, bracket:null, swiss:null, format:null, checkins:{}
+    started:false, bracket:null, swiss:null, group:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
   });
   renderAdminEventList();
 });
@@ -1456,12 +2434,14 @@ document.getElementById('saveEventsBtn').addEventListener('click', async ()=>{
 });
 document.getElementById('saveRosterBtn').addEventListener('click', async ()=>{
   const ev = editingState.events.find(e=>e.id===currentAdminEventId);
-  if(ev && ev.type === 'individual'){
-    ev.individualMain = document.getElementById('individualMainInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
-    ev.individualBackup = document.getElementById('individualBackupInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  } else if(ev && ev.type === 'team'){
-    syncTeamGroupFromDOM(ev, 'mainTeams', 'mainTeamsWrap');
-    syncTeamGroupFromDOM(ev, 'backupTeams', 'backupTeamsWrap');
+  if(ev && currentEditorMode === 'full'){
+    if(ev.type === 'individual'){
+      ev.individualMain = document.getElementById('individualMainInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
+      ev.individualBackup = document.getElementById('individualBackupInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
+    } else if(ev.type === 'team'){
+      syncTeamGroupFromDOM(ev, 'mainTeams', 'mainTeamsWrap');
+      syncTeamGroupFromDOM(ev, 'backupTeams', 'backupTeamsWrap');
+    }
   }
   try{ await persist(editingState); showStatus('statusMsgRoster', '已儲存，公開頁面已同步更新。'); }
   catch(e){ showStatus('statusMsgRoster', '儲存失敗，請稍後再試。', true); }
