@@ -102,6 +102,10 @@
   }
   .type-chip.live-badge:hover{ background:rgba(255,59,92,0.24); }
   @keyframes live-pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.6; } }
+  .type-chip.finished-badge{
+    background:rgba(57,255,136,0.14); color:var(--lane-green); border:1px solid rgba(57,255,136,0.35);
+    font-family:'Noto Sans TC',sans-serif;
+  }
 
   .event-card{
     background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--arena-gold);
@@ -696,6 +700,43 @@ function typeLabel(t){ return t === 'team' ? '團體賽' : '個人賽'; }
 // ---------- PUBLIC: event list ----------
 // Compact champion/runner-up/3rd summary for the event list card. Only
 // returns something once the tournament actually has a decided champion.
+// True once a started tournament has a fully decided result — a champion
+// for elimination/group formats, or every Swiss round completed.
+function isTournamentFinished(ev){
+  if(!ev.started) return false;
+  if(ev.format === 'swiss'){
+    if(!ev.swiss) return false;
+    if(ev.swiss.rounds.length < ev.swiss.totalRounds) return false;
+    const lastRound = ev.swiss.rounds[ev.swiss.rounds.length-1];
+    return lastRound.every(m=> !!m.winner);
+  }
+  if(ev.bracket){
+    const rounds = totalRounds(ev.bracket);
+    if(ev.bracket.finalStage === 'roundrobin'){
+      const finalists = getRoundEntrants(ev.bracket, rounds);
+      const pairs = [[0,1],[0,2],[1,2]];
+      return pairs.every(([i,j])=>{
+        const a = finalists[i], b = finalists[j];
+        if(!a || !b) return true;
+        const key = `${i}-${j}`;
+        return !!(ev.bracket.roundRobinPicks && ev.bracket.roundRobinPicks[key]);
+      });
+    }
+    return !!getRoundEntrants(ev.bracket, rounds)[0];
+  }
+  return false; // group stage still in progress, bracket not generated yet
+}
+
+// Returns the small header badge for a started tournament: the pulsing
+// "in progress" chip, or a static "finished" chip once there's a result.
+function getTournamentStatusBadge(ev){
+  if(!(ev.started && (ev.bracket || ev.swiss || ev.group))) return '';
+  if(isTournamentFinished(ev)){
+    return '<span class="type-chip finished-badge" style="cursor:default;">🏁 比賽結束</span>';
+  }
+  return '<span class="type-chip live-badge" style="cursor:default;">🔴 賽程進行中</span>';
+}
+
 function getEventPodium(ev){
   if(!ev.bracket) return null;
   const bracket = ev.bracket;
@@ -721,17 +762,13 @@ function getEventPodium(ev){
   if(!champion) return null;
   const finalists = getRoundEntrants(bracket, rounds - 1);
   const runnerUp = finalists.find(n=> n && n !== champion) || null;
-  const third = [];
-  if(rounds >= 2){
-    const semiRound = rounds - 2;
-    const semiEntrants = getRoundEntrants(bracket, semiRound);
-    for(let i=0;i<semiEntrants.length/2;i++){
-      const a = semiEntrants[2*i], b = semiEntrants[2*i+1];
-      if(!a || !b) continue;
-      const pick = bracket.picks[`${semiRound}-${i}`];
-      if(!pick) continue;
-      third.push(pick === a ? b : a);
-    }
+  const semiLosers = getSemifinalLosers(bracket, rounds);
+  let third = [];
+  if(semiLosers.length === 2){
+    const thirdPick = bracket.picks ? bracket.picks['3rd'] : null;
+    third = thirdPick ? [thirdPick] : semiLosers; // fall back to showing both until the 3rd-place match is played
+  } else if(semiLosers.length === 1){
+    third = semiLosers;
   }
   return { champion, runnerUp, third };
 }
@@ -766,9 +803,7 @@ function renderEventList(filter){
     }
     const card = document.createElement('div');
     card.className = 'event-card';
-    const liveBadge = (ev.started && (ev.bracket || ev.swiss || ev.group))
-      ? '<span class="type-chip live-badge" style="cursor:default;">🔴 賽程進行中</span>'
-      : '';
+    const liveBadge = getTournamentStatusBadge(ev);
     const podium = getEventPodium(ev);
     const podiumHtml = podium
       ? `<p class="ev-meta" style="color:var(--lane-gold);">🏆 ${escapeHtml(podium.champion)}${podium.runnerUp ? `　🥈 ${escapeHtml(podium.runnerUp)}` : ''}${podium.third.length ? `　🥉 ${podium.third.map(escapeHtml).join('、')}` : ''}</p>`
@@ -814,7 +849,14 @@ function openEventDetail(id){
   chip.className = 'type-chip ' + (ev.type==='team' ? 'team' : 'individual');
   document.getElementById('detailEventDate').textContent = fmtDate(ev.date);
   const liveBadge = document.getElementById('detailLiveBadge');
-  liveBadge.classList.toggle('hidden', !(ev.started && (ev.bracket || ev.swiss || ev.group)));
+  const hasTournament = ev.started && (ev.bracket || ev.swiss || ev.group);
+  liveBadge.classList.toggle('hidden', !hasTournament);
+  if(hasTournament){
+    const finished = isTournamentFinished(ev);
+    liveBadge.textContent = finished ? '🏁 比賽結束' : '🔴 賽程進行中';
+    liveBadge.classList.toggle('live-badge', !finished);
+    liveBadge.classList.toggle('finished-badge', finished);
+  }
   document.getElementById('openRegisterBtn').classList.toggle('hidden', !ev.registrationOpen);
   document.getElementById('registerFormPanel').classList.add('hidden');
   document.getElementById('teamSearchInput').value = "";
@@ -1349,14 +1391,20 @@ function getRoundEntrants(bracket, round){
 function setBracketPick(ev, round, matchIndex, name){
   ev.bracket.picks[`${round}-${matchIndex}`] = name;
   Object.keys(ev.bracket.picks).forEach(k=>{
+    if(k === '3rd') return;
     const r = parseInt(k.split('-')[0], 10);
     if(r > round) delete ev.bracket.picks[k];
   });
   ev.bracket.scores = ev.bracket.scores || {};
   Object.keys(ev.bracket.scores).forEach(k=>{
+    if(k === '3rd') return;
     const r = parseInt(k.split('-')[0], 10);
     if(r > round) delete ev.bracket.scores[k];
   });
+  // Any upstream change can alter who reaches the semifinal, which
+  // invalidates whatever bronze-match result was already recorded.
+  delete ev.bracket.picks['3rd'];
+  delete ev.bracket.scores['3rd'];
 }
 
 function renderRoundRobinFinal(bracket, finalists, interactive){
@@ -1402,6 +1450,45 @@ function renderRoundRobinFinal(bracket, finalists, interactive){
 // place aren't determined by an actual playoff match (no bronze match is
 // played), so when both semifinal losers have recorded scores we rank them
 // by how close their loss was; otherwise they're shown as a tied 3rd.
+// Both people knocked out in the semifinal round, in bracket order.
+function getSemifinalLosers(bracket, rounds){
+  if(rounds < 2) return [];
+  const semiRound = rounds - 2;
+  const semiEntrants = getRoundEntrants(bracket, semiRound);
+  const losers = [];
+  for(let i=0;i<semiEntrants.length/2;i++){
+    const a = semiEntrants[2*i], b = semiEntrants[2*i+1];
+    if(!a || !b) continue;
+    const pick = bracket.picks[`${semiRound}-${i}`];
+    if(!pick) continue;
+    losers.push(pick === a ? b : a);
+  }
+  return losers;
+}
+
+// A real 3rd/4th place match between the two semifinal losers, rendered
+// the same way as any other bracket match. Uses the special key '3rd'
+// instead of a round-match index.
+function renderThirdPlaceMatch(bracket, rounds, interactive){
+  const losers = getSemifinalLosers(bracket, rounds);
+  if(losers.length !== 2) return '';
+  const [a, b] = losers;
+  const pick = bracket.picks ? bracket.picks['3rd'] : null;
+  const sc = bracket.scores ? bracket.scores['3rd'] : null;
+  let html = `<div class="admin-subsection"><div class="sub-head"><h4>季殿軍賽</h4></div><div class="bracket-match" style="max-width:320px;">`;
+  [a, b].forEach((name, idx)=>{
+    let cls = 'bracket-slot';
+    if(pick === name) cls += ' winner';
+    const clickable = interactive && a !== b;
+    if(clickable) cls += ' clickable';
+    const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+    const inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+    html += `<div class="${cls}"${clickable ? ` data-round="3rd" data-match="0" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
+  });
+  html += `</div></div>`;
+  return html;
+}
+
 function renderBracketPlacements(bracket, rounds){
   const champion = getRoundEntrants(bracket, rounds)[0];
   let inner = `<div class="bracket-champion">🏆 冠軍：${champion ? escapeHtml(champion) : '尚未產生'}</div>`;
@@ -1413,30 +1500,18 @@ function renderBracketPlacements(bracket, rounds){
     inner += `<div class="bracket-champion" style="border-color:#C7CBD1; color:#C7CBD1; background:rgba(199,203,209,0.08);">🥈 亞軍：${escapeHtml(runnerUp)}</div>`;
   }
 
-  if(rounds >= 2){
-    const semiRound = rounds - 2;
-    const semiEntrants = getRoundEntrants(bracket, semiRound);
-    const losers = [];
-    for(let i=0;i<semiEntrants.length/2;i++){
-      const a = semiEntrants[2*i], b = semiEntrants[2*i+1];
-      if(!a || !b) continue;
-      const pick = bracket.picks[`${semiRound}-${i}`];
-      if(!pick) continue;
-      const loser = pick === a ? b : a;
-      const sc = bracket.scores ? bracket.scores[`${semiRound}-${i}`] : null;
-      const margin = sc ? (pick === a ? sc.b - sc.a : sc.a - sc.b) : null;
-      losers.push({ name: loser, margin });
+  const losers = getSemifinalLosers(bracket, rounds);
+  if(losers.length === 2){
+    const thirdPick = bracket.picks ? bracket.picks['3rd'] : null;
+    if(thirdPick){
+      const fourth = losers.find(n=> n !== thirdPick);
+      inner += `<div class="bracket-champion" style="border-color:#CD7F32; color:#CD7F32; background:rgba(205,127,50,0.08);">🥉 季軍：${escapeHtml(thirdPick)}</div>`;
+      if(fourth) inner += `<div class="bracket-champion" style="border-color:#8A6A50; color:#8A6A50; background:rgba(138,106,80,0.08);">殿軍：${escapeHtml(fourth)}</div>`;
+    } else {
+      inner += `<div class="bracket-champion" style="border-color:#CD7F32; color:#CD7F32; background:rgba(205,127,50,0.08);">🥉 季殿軍賽尚未完成</div>`;
     }
-    if(losers.length){
-      const haveMargins = losers.every(l=> l.margin !== null);
-      if(haveMargins && losers.length === 2 && losers[0].margin !== losers[1].margin){
-        losers.sort((x,y)=> y.margin - x.margin);
-        inner += `<div class="bracket-champion" style="border-color:#CD7F32; color:#CD7F32; background:rgba(205,127,50,0.08);">🥉 季軍：${escapeHtml(losers[0].name)}</div>`;
-        inner += `<div class="bracket-champion" style="border-color:#8A6A50; color:#8A6A50; background:rgba(138,106,80,0.08);">殿軍：${escapeHtml(losers[1].name)}</div>`;
-      } else {
-        inner += `<div class="bracket-champion" style="border-color:#CD7F32; color:#CD7F32; background:rgba(205,127,50,0.08);">🥉 季軍：${losers.map(l=>escapeHtml(l.name)).join('、')}（並列）</div>`;
-      }
-    }
+  } else if(losers.length === 1){
+    inner += `<div class="bracket-champion" style="border-color:#CD7F32; color:#CD7F32; background:rgba(205,127,50,0.08);">🥉 季軍：${escapeHtml(losers[0])}</div>`;
   }
   return `<div class="placement-wrap">${inner}</div>`;
 }
@@ -1482,12 +1557,19 @@ function renderBracket(ev, containerEl, interactive){
     const finalists = getRoundEntrants(bracket, rounds);
     html += renderRoundRobinFinal(bracket, finalists, interactive);
   } else {
+    html += renderThirdPlaceMatch(bracket, rounds, interactive);
     html += renderBracketPlacements(bracket, rounds);
   }
   containerEl.innerHTML = html;
   if(interactive){
     containerEl.querySelectorAll('.bracket-slot.clickable[data-round]').forEach(el=>{
       el.addEventListener('click', ()=>{
+        if(el.dataset.round === '3rd'){
+          bracket.picks = bracket.picks || {};
+          bracket.picks['3rd'] = el.dataset.name;
+          renderBracket(ev, containerEl, true);
+          return;
+        }
         const r = parseInt(el.dataset.round, 10);
         const m = parseInt(el.dataset.match, 10);
         setBracketPick(ev, r, m, el.dataset.name);
@@ -1858,6 +1940,13 @@ function renderRefereeBracket(ev, containerEl){
     });
     html += '</div>';
   } else {
+    const semiLosers = getSemifinalLosers(bracket, rounds);
+    if(semiLosers.length === 2){
+      const [a, b] = semiLosers;
+      html += `<div class="admin-subsection"><div class="sub-head"><h4>季殿軍賽</h4></div>`;
+      html += refereeMatchRowHtml(a, b, bracket.picks['3rd'], bracket.scores['3rd'], '3rd', 0);
+      html += `</div>`;
+    }
     html += renderBracketPlacements(bracket, rounds);
   }
   containerEl.innerHTML = html;
@@ -1889,6 +1978,11 @@ function renderRefereeBracket(ev, containerEl){
             freshEv.bracket.roundRobinPicks = freshEv.bracket.roundRobinPicks || {};
             freshEv.bracket.roundRobinScores[matchVal] = { a:scoreA, b:scoreB };
             freshEv.bracket.roundRobinPicks[matchVal] = winner;
+          } else if(roundVal === '3rd'){
+            freshEv.bracket.scores = freshEv.bracket.scores || {};
+            freshEv.bracket.picks = freshEv.bracket.picks || {};
+            freshEv.bracket.scores['3rd'] = { a:scoreA, b:scoreB };
+            freshEv.bracket.picks['3rd'] = winner;
           } else {
             const r = parseInt(roundVal, 10), m = parseInt(matchVal, 10);
             freshEv.bracket.scores = freshEv.bracket.scores || {};
