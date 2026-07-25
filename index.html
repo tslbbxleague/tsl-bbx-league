@@ -372,10 +372,19 @@
     <p style="font-family:'Oswald',sans-serif; font-size:11px; letter-spacing:1.5px; color:var(--ink-soft); text-transform:uppercase; margin:0 0 8px;">賽事說明</p>
     <p id="detailDescriptionText" style="white-space:pre-wrap; font-size:14px; line-height:1.6; margin:0; color:var(--ink);"></p>
   </div>
-  <div class="search">
-    <input id="teamSearchInput" type="text" placeholder="搜尋隊伍或姓名…">
+  <div class="type-select-row hidden" id="detailTabRow" style="margin-bottom:16px;">
+    <label class="event-tab active" data-detail-tab="roster" style="cursor:pointer;">正取名單</label>
+    <label class="event-tab" data-detail-tab="schedule" style="cursor:pointer;">賽程</label>
   </div>
-  <div id="rosterDisplay"></div>
+  <div id="rosterPanel">
+    <div class="search">
+      <input id="teamSearchInput" type="text" placeholder="搜尋隊伍或姓名…">
+    </div>
+    <div id="rosterDisplay"></div>
+  </div>
+  <div id="schedulePanel" class="hidden">
+    <div id="scheduleDisplay"></div>
+  </div>
 </main>
 
 <footer class="pagefoot" id="publicFooter">最後更新時間：—</footer>
@@ -834,6 +843,14 @@ function getEventPodium(ev){
   return { champion, runnerUp, third, fourth };
 }
 
+function setDetailTab(tab){
+  document.querySelectorAll('#detailTabRow .event-tab').forEach(t=>{
+    t.classList.toggle('active', t.dataset.detailTab === tab);
+  });
+  document.getElementById('rosterPanel').classList.toggle('hidden', tab !== 'roster');
+  document.getElementById('schedulePanel').classList.toggle('hidden', tab !== 'schedule');
+}
+
 function openEventDetailAndRegister(id){
   openEventDetail(id);
   const btn = document.getElementById('openRegisterBtn');
@@ -925,6 +942,8 @@ function openEventDetail(id){
   const hasDescription = !!(ev.description && ev.description.trim());
   descBlock.classList.toggle('hidden', !hasDescription);
   if(hasDescription) document.getElementById('detailDescriptionText').textContent = ev.description;
+  document.getElementById('detailTabRow').classList.toggle('hidden', !hasTournament);
+  setDetailTab('roster');
   document.getElementById('teamSearchInput').value = "";
   renderRosterDisplay(ev, "");
   document.getElementById('publicEventList').classList.add('hidden');
@@ -933,15 +952,26 @@ function openEventDetail(id){
 
 function renderRosterDisplay(ev, filter){
   const wrap = document.getElementById('rosterDisplay');
+  const scheduleWrap = document.getElementById('scheduleDisplay');
   const q = (filter||"").trim().toLowerCase();
   wrap.innerHTML = "";
 
-  const tournamentBlock = (ev.started && (ev.bracket || ev.swiss || ev.group || ev.doubleElim))
-    ? `<div class="section-block">
-        <p class="section-title main"><span class="dot"></span>${ev.format === 'swiss' ? '瑞士制積分賽' : (ev.format === 'group' ? '分組循環賽' : (ev.format === 'doubleElim' ? '雙敗淘汰賽' : '賽程對戰表'))}</p>
+  const hasTournament = ev.started && (ev.bracket || ev.swiss || ev.group || ev.doubleElim);
+  const scheduleTitle = ev.format === 'swiss' ? '瑞士制積分賽' : (ev.format === 'group' ? '分組循環賽' : (ev.format === 'doubleElim' ? '雙敗淘汰賽' : '賽程對戰表'));
+
+  function renderScheduleSection(){
+    if(!hasTournament){ scheduleWrap.innerHTML = ''; return; }
+    scheduleWrap.innerHTML = `
+      <div class="section-block">
+        <p class="section-title main"><span class="dot"></span>${scheduleTitle}</p>
         <div id="publicTournamentDisplay"></div>
-      </div>`
-    : '';
+      </div>`;
+    const target = document.getElementById('publicTournamentDisplay');
+    if(ev.format === 'swiss' && ev.swiss) renderSwiss(ev, target, false);
+    else if(ev.format === 'group' && ev.group) renderGroupStage(ev, target, false);
+    else if(ev.format === 'doubleElim' && ev.doubleElim) renderDoubleElim(ev, target, false);
+    else if(ev.bracket) renderBracket(ev, target, false);
+  }
 
   if(ev.type === 'individual'){
     const main = ev.individualMain.filter(n=>!q || n.toLowerCase().includes(q));
@@ -959,14 +989,8 @@ function renderRosterDisplay(ev, filter){
         <p class="section-title backup"><span class="dot"></span>備取名單（${backup.length}）</p>
         <div class="backup-list">${backupChips || '<span class="empty-note">尚無備取名單</span>'}</div>
       </div>
-      ${tournamentBlock}
     `;
-    if(ev.started){
-      if(ev.format === 'swiss' && ev.swiss) renderSwiss(ev, document.getElementById('publicTournamentDisplay'), false);
-      else if(ev.format === 'group' && ev.group) renderGroupStage(ev, document.getElementById('publicTournamentDisplay'), false);
-      else if(ev.format === 'doubleElim' && ev.doubleElim) renderDoubleElim(ev, document.getElementById('publicTournamentDisplay'), false);
-      else if(ev.bracket) renderBracket(ev, document.getElementById('publicTournamentDisplay'), false);
-    }
+    renderScheduleSection();
     return;
   }
 
@@ -995,21 +1019,15 @@ function renderRosterDisplay(ev, filter){
     `;
   }
 
-  let html = `<div class="section-block">
+  wrap.innerHTML = `<div class="section-block">
       <p class="section-title main"><span class="dot"></span>正取隊伍（${mainTeams.length}）</p>
       ${mainTeams.length ? mainTeams.map((t,i)=>teamCardHtml(t,i,false)).join('') : '<p class="empty-note">尚未設定正取隊伍</p>'}
     </div>
     <div class="section-block">
       <p class="section-title backup"><span class="dot"></span>備取隊伍（${backupTeams.length}）</p>
       ${backupTeams.length ? backupTeams.map((t,i)=>teamCardHtml(t,i,true)).join('') : '<p class="empty-note">尚無備取隊伍</p>'}
-    </div>
-    ${tournamentBlock}`;
-  wrap.innerHTML = html;
-  if(ev.started){
-    if(ev.format === 'swiss' && ev.swiss) renderSwiss(ev, document.getElementById('publicTournamentDisplay'), false);
-    else if(ev.format === 'doubleElim' && ev.doubleElim) renderDoubleElim(ev, document.getElementById('publicTournamentDisplay'), false);
-    else if(ev.bracket) renderBracket(ev, document.getElementById('publicTournamentDisplay'), false);
-  }
+    </div>`;
+  renderScheduleSection();
 }
 
 function showEventList(){
@@ -3034,8 +3052,10 @@ document.getElementById('backFromRefEvents').addEventListener('click', showPubli
 document.getElementById('backFromRefMatchEntry').addEventListener('click', showRefereeEvents);
 document.getElementById('backToEventsBtn').addEventListener('click', showEventList);
 document.getElementById('detailLiveBadge').addEventListener('click', ()=>{
-  const target = document.getElementById('publicTournamentDisplay');
-  if(target) target.scrollIntoView({ behavior:'smooth', block:'start' });
+  setDetailTab('schedule');
+});
+document.querySelectorAll('#detailTabRow .event-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=> setDetailTab(tab.dataset.detailTab));
 });
 
 // ---------- public registration form ----------
