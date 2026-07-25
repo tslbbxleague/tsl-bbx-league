@@ -299,6 +299,7 @@
     </div>
   </div>
   <nav>
+    <button id="leaderboardBtn">🏆 戰績榜</button>
     <button id="refereeBtn">🏁 裁判登錄</button>
     <button id="toAdminBtn">後台管理</button>
   </nav>
@@ -388,6 +389,21 @@
 </main>
 
 <footer class="pagefoot" id="publicFooter">最後更新時間：—</footer>
+
+<!-- LEADERBOARD -->
+<main class="hidden" id="leaderboardView">
+  <div class="crumbs">
+    <button id="backFromLeaderboard">← 賽事一覽</button>
+  </div>
+  <div class="event-title-block">
+    <h2 style="font-size:20px;">選手戰績榜</h2>
+    <span class="date num" style="font-size:12px;">僅計算個人賽・冠軍10分／亞軍7分／季軍3分／殿軍1分</span>
+  </div>
+  <div class="search">
+    <input id="leaderboardSearchInput" type="text" placeholder="搜尋暱稱…">
+  </div>
+  <div id="leaderboardWrap"></div>
+</main>
 
 <!-- ADMIN GATE -->
 <div class="admin-wrap hidden" id="gateView">
@@ -710,7 +726,7 @@ function seedData(){
         id: cryptoId(), name:"個人賽", date:"2026-07-17", type:"individual",
         individualMain:["王小明","陳曉華","林志豪","黃美玲"],
         individualBackup:["張家豪","李佳穎"],
-        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false
+        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true
       },
       {
         id: cryptoId(), name:"王牌團體賽", date:"2026-07-24", type:"team",
@@ -722,7 +738,7 @@ function seedData(){
         backupTeams:[
           { id: cryptoId(), name:"C隊", members:["張惠妹","周杰倫"] }
         ],
-        started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false
+        started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true
       }
     ]
   };
@@ -851,10 +867,71 @@ function setDetailTab(tab){
   document.getElementById('schedulePanel').classList.toggle('hidden', tab !== 'schedule');
 }
 
+// Aggregates champion/runner-up/3rd/4th counts across every finished
+// individual event. Team events are skipped since their podium entries are
+// team names, not individual nicknames.
+const PLACEMENT_POINTS = { champion:10, runnerUp:7, third:3, fourth:1 };
+
+function computeLeaderboard(){
+  const board = {};
+  function bump(name, key){
+    if(!name) return;
+    if(!board[name]) board[name] = { name, champion:0, runnerUp:0, third:0, fourth:0, points:0 };
+    board[name][key] += 1;
+    board[name].points += PLACEMENT_POINTS[key];
+  }
+  state.events.forEach(ev=>{
+    if(ev.type !== 'individual') return;
+    if(ev.countsForLeaderboard === false) return;
+    const podium = getEventPodium(ev);
+    if(!podium || !podium.champion) return;
+    bump(podium.champion, 'champion');
+    bump(podium.runnerUp, 'runnerUp');
+    if(podium.third && podium.third.length === 1) bump(podium.third[0], 'third');
+    bump(podium.fourth, 'fourth');
+  });
+  return Object.values(board).sort((a,b)=>
+    b.points - a.points || b.champion - a.champion || b.runnerUp - a.runnerUp || b.third - a.third || b.fourth - a.fourth
+  );
+}
+
+function renderLeaderboard(filter){
+  const wrap = document.getElementById('leaderboardWrap');
+  const q = (filter||"").trim().toLowerCase();
+  const rows = computeLeaderboard().filter(r=> !q || r.name.toLowerCase().includes(q));
+  if(rows.length === 0){
+    wrap.innerHTML = '<p class="empty-note">目前還沒有已完成的個人賽對戰紀錄。</p>';
+    return;
+  }
+  wrap.innerHTML = rows.map((r,i)=>`
+    <div class="event-card" style="cursor:default;">
+      <div>
+        <p class="ev-name">${i+1}. ${escapeHtml(r.name)}</p>
+        <p class="ev-meta">
+          ${r.champion ? `🏆 冠軍 ×${r.champion}　` : ''}${r.runnerUp ? `🥈 亞軍 ×${r.runnerUp}　` : ''}${r.third ? `🥉 季軍 ×${r.third}　` : ''}${r.fourth ? `4️⃣ 殿軍 ×${r.fourth}` : ''}
+        </p>
+      </div>
+      <span class="go">${r.points} 分</span>
+    </div>
+  `).join('');
+}
+
+function showLeaderboard(){
+  hideAllViews();
+  document.getElementById('leaderboardView').classList.remove('hidden');
+  document.getElementById('leaderboardSearchInput').value = '';
+  renderLeaderboard('');
+}
+
 function openEventDetailAndRegister(id){
   openEventDetail(id);
   const btn = document.getElementById('openRegisterBtn');
   if(btn && !btn.classList.contains('hidden')) btn.click();
+}
+
+function openEventDetailToSchedule(id){
+  openEventDetail(id);
+  setDetailTab('schedule');
 }
 
 function renderEventList(filter){
@@ -890,6 +967,7 @@ function renderEventList(filter){
     const registerBtnHtml = ev.registrationOpen
       ? `<button class="btn gold small" data-action="quick-register" data-id="${ev.id}">📝 報名</button>`
       : '';
+    const hasTournament = ev.started && (ev.bracket || ev.swiss || ev.group || ev.doubleElim);
     card.innerHTML = `
       <div>
         <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span> ${liveBadge}</p>
@@ -899,7 +977,10 @@ function renderEventList(filter){
       </div>
       <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
         ${registerBtnHtml}
-        <span class="go">查看名單 →</span>
+        <div style="display:flex; gap:8px; align-items:center;">
+          ${hasTournament ? `<button class="btn secondary small" data-action="view-schedule" data-id="${ev.id}">查看賽程</button>` : ''}
+          <span class="go">查看名單 →</span>
+        </div>
       </div>
     `;
     card.addEventListener('click', ()=> openEventDetail(ev.id));
@@ -908,6 +989,13 @@ function renderEventList(filter){
       regBtn.addEventListener('click', e=>{
         e.stopPropagation();
         openEventDetailAndRegister(ev.id);
+      });
+    }
+    const scheduleBtn = card.querySelector('[data-action="view-schedule"]');
+    if(scheduleBtn){
+      scheduleBtn.addEventListener('click', e=>{
+        e.stopPropagation();
+        openEventDetailToSchedule(ev.id);
       });
     }
     wrap.appendChild(card);
@@ -1065,6 +1153,11 @@ function renderAdminEventList(){
             <button class="btn danger" data-action="delete-event" data-id="${ev.id}">刪除</button>
           </div>
         </div>
+        ${ev.type === 'individual' ? `
+        <label style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--ink-soft); margin-top:8px;">
+          <input type="checkbox" data-field="countsForLeaderboard" data-id="${ev.id}" ${ev.countsForLeaderboard !== false ? 'checked' : ''}>
+          計入戰績榜
+        </label>` : ''}
       `;
       wrap.appendChild(div);
     });
@@ -1085,6 +1178,13 @@ function renderAdminEventList(){
     el.addEventListener('change', e=>{
       const ev = editingState.events.find(x=>x.id===e.target.dataset.id);
       if(ev) ev.type = e.target.value;
+      renderAdminEventList();
+    });
+  });
+  wrap.querySelectorAll('[data-field="countsForLeaderboard"]').forEach(el=>{
+    el.addEventListener('change', e=>{
+      const ev = editingState.events.find(x=>x.id===e.target.dataset.id);
+      if(ev) ev.countsForLeaderboard = e.target.checked;
     });
   });
   wrap.querySelectorAll('[data-action="delete-event"]').forEach(el=>{
@@ -2914,7 +3014,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
 });
 
 // ---------- navigation ----------
-const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView'];
+const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView'];
 function hideAllViews(){
   TOP_LEVEL_VIEWS.forEach(id=> document.getElementById(id).classList.add('hidden'));
   document.getElementById('publicFooter').classList.add('hidden');
@@ -3045,6 +3145,11 @@ document.getElementById('logoHome').addEventListener('click', ()=>{
 });
 document.getElementById('toAdminBtn').addEventListener('click', showGate);
 document.getElementById('refereeBtn').addEventListener('click', showRefereeGate);
+document.getElementById('leaderboardBtn').addEventListener('click', showLeaderboard);
+document.getElementById('backFromLeaderboard').addEventListener('click', showPublic);
+document.getElementById('leaderboardSearchInput').addEventListener('input', e=>{
+  renderLeaderboard(e.target.value);
+});
 document.getElementById('backFromGate').addEventListener('click', showPublic);
 document.getElementById('backFromRefGate').addEventListener('click', showPublic);
 document.getElementById('backFromAdminEvents').addEventListener('click', showPublic);
@@ -3165,7 +3270,7 @@ document.getElementById('addEventBtn').addEventListener('click', ()=>{
   editingState.events.push({
     id: cryptoId(), name:"新賽事", date:"", type:"individual",
     individualMain:[], individualBackup:[], mainTeams:[], backupTeams:[],
-    started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false
+    started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true
   });
   renderAdminEventList();
 });
