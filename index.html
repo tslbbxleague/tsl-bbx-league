@@ -194,6 +194,7 @@
     font-size:13px; display:flex; align-items:center; gap:8px; background:var(--panel); color:var(--ink);
   }
   .type-select-row input{ accent-color:var(--lane-blue); }
+  .event-tab.active{ border-color:var(--lane-gold); color:var(--lane-gold); background:rgba(240,193,67,0.08); font-weight:700; }
 
   .admin-list-editor{ margin-bottom:16px; }
   .col label.field-label{
@@ -305,6 +306,10 @@
 
 <!-- PUBLIC: EVENT LIST -->
 <main id="publicEventList">
+  <div class="type-select-row" id="eventTabRow" style="margin-bottom:16px;">
+    <label class="event-tab active" data-tab="ongoing" style="cursor:pointer;">進行中賽事</label>
+    <label class="event-tab" data-tab="ended" style="cursor:pointer;">已結束賽事</label>
+  </div>
   <div class="search">
     <input id="eventSearchInput" type="text" placeholder="搜尋賽事名稱或日期…">
   </div>
@@ -362,6 +367,10 @@
         <span class="status-msg" id="registerStatusMsg"></span>
       </div>
     </div>
+  </div>
+  <div id="detailDescriptionBlock" class="hidden" style="margin-bottom:22px; background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:14px 18px;">
+    <p style="font-family:'Oswald',sans-serif; font-size:11px; letter-spacing:1.5px; color:var(--ink-soft); text-transform:uppercase; margin:0 0 8px;">賽事說明</p>
+    <p id="detailDescriptionText" style="white-space:pre-wrap; font-size:14px; line-height:1.6; margin:0; color:var(--ink);"></p>
   </div>
   <div class="search">
     <input id="teamSearchInput" type="text" placeholder="搜尋隊伍或姓名…">
@@ -444,6 +453,15 @@
     <span class="type-chip" id="editorEventType"></span>
   </div>
 
+  <!-- event description / prizes / rules -->
+  <div class="admin-subsection" id="descriptionAdminSection">
+    <div class="sub-head">
+      <h4>賽事說明（獎品、規則等）</h4>
+    </div>
+    <p class="empty-note" style="margin:0 0 8px;">這裡輸入的內容，一般人點進這場賽事就會看到。</p>
+    <textarea class="roster-input" id="eventDescriptionInput" style="min-height:140px;" placeholder="例如：冠軍獎金 $3000、正取選手須於賽前 30 分鐘完成點名⋯⋯"></textarea>
+  </div>
+
   <!-- registration management -->
   <div class="admin-subsection" id="registrationAdminSection">
     <div class="sub-head">
@@ -500,59 +518,64 @@
   <div class="admin-subsection" id="bracketAdminSection">
     <div class="sub-head">
       <h4>賽制設定</h4>
-      <button class="btn secondary small" id="toggleStartBtn">開始比賽</button>
+      <div style="display:flex; gap:8px;">
+        <button class="btn secondary small hidden" id="toggleLockBtn">🔒 鎖定賽程</button>
+        <button class="btn secondary small" id="toggleStartBtn">開始比賽</button>
+      </div>
     </div>
+    <p class="empty-note hidden" id="lockedNotice" style="margin:0 0 10px; color:var(--lane-gold);">🔒 賽程已鎖定，無法修改對戰結果或重設。按「解鎖」才能繼續編輯。</p>
     <div id="bracketSetup" class="hidden">
-      <p class="empty-note" style="margin:0 0 10px;">選擇賽制與人數，再選擇要用隨機分配還是手動分配。</p>
-      <div class="type-select-row" id="formatRow">
-        <label><input type="radio" name="tourFormat" value="elimination" checked> 單淘汰賽</label>
-        <label><input type="radio" name="tourFormat" value="doubleElim"> 雙敗淘汰</label>
-        <label><input type="radio" name="tourFormat" value="swiss"> 瑞士制</label>
-        <label id="groupFormatLabel"><input type="radio" name="tourFormat" value="group"> 分組循環賽</label>
-      </div>
-      <div class="type-select-row" id="bracketSizeRow">
-        <label><input type="radio" name="bracketSize" value="8"> 8 人</label>
-        <label><input type="radio" name="bracketSize" value="16"> 16 人</label>
-        <label><input type="radio" name="bracketSize" value="24"> 24 人</label>
-        <label><input type="radio" name="bracketSize" value="32" checked> 32 人</label>
-        <label><input type="radio" name="bracketSize" value="36"> 36 人</label>
-        <label><input type="radio" name="bracketSize" value="48"> 48 人<span id="bracketSize48Note">（三強循環）</span></label>
-        <label><input type="radio" name="bracketSize" value="64"> 64 人</label>
-      </div>
-      <div id="swissSizeRow" class="hidden" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
-        <label for="swissSizeInput" style="font-size:13px; color:var(--ink-soft);">參賽人數（留空＝目前正取名單全部人數）</label>
-        <input type="number" id="swissSizeInput" min="2" placeholder="不限" style="width:90px; padding:6px 8px; border:1px solid var(--line); border-radius:3px; background:var(--paper); color:var(--ink); font-size:13px;">
-      </div>
-      <div class="type-select-row hidden" id="groupSizeRow">
-        <label><input type="radio" name="groupSize" value="8"> 8 人（2組4人）</label>
-        <label><input type="radio" name="groupSize" value="16"> 16 人（4組4人）</label>
-        <label><input type="radio" name="groupSize" value="24"> 24 人（8組3人）</label>
-        <label><input type="radio" name="groupSize" value="32" checked> 32 人（8組4人）</label>
-        <label><input type="radio" name="groupSize" value="36"> 36 人（12組3人）</label>
-        <label><input type="radio" name="groupSize" value="48"> 48 人（16組3人）</label>
-      </div>
-      <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <button class="btn gold small" id="autoShuffleBtn">🔀 隨機分配</button>
-        <button class="btn secondary small" id="openManualAssignBtn">✋ 手動分配</button>
-      </div>
-
-      <div id="shuffleConfirmRow" class="shuffle-confirm hidden">
-        <p style="margin:0 0 10px;">確定要重新洗牌嗎？這會重新產生賽程，先前已選出的勝負紀錄將會清空。</p>
-        <button class="btn gold small" id="confirmShuffleBtn">確定洗牌</button>
-        <button class="btn secondary small" id="cancelShuffleBtn">取消</button>
-      </div>
-
-      <div id="manualAssignPanel" class="hidden" style="margin-top:14px;">
-        <p class="empty-note" style="margin:0 0 10px;">幫每個位置指定人選（隊伍或個人），選「－ 輪空 －」代表該位置空著，對手會直接晉級。</p>
-        <div id="manualSlotsGrid" class="manual-slots-grid"></div>
-        <div style="display:flex; gap:10px; margin-top:12px;">
-          <button class="btn gold small" id="applyManualAssignBtn">套用手動分配</button>
-          <button class="btn secondary small" id="cancelManualAssignBtn">取消</button>
+      <div id="tournamentControls">
+        <p class="empty-note" style="margin:0 0 10px;">選擇賽制與人數，再選擇要用隨機分配還是手動分配。</p>
+        <div class="type-select-row" id="formatRow">
+          <label><input type="radio" name="tourFormat" value="elimination" checked> 單淘汰賽</label>
+          <label><input type="radio" name="tourFormat" value="doubleElim"> 雙敗淘汰</label>
+          <label><input type="radio" name="tourFormat" value="swiss"> 瑞士制</label>
+          <label id="groupFormatLabel"><input type="radio" name="tourFormat" value="group"> 分組循環賽</label>
         </div>
-        <div id="manualConfirmRow" class="shuffle-confirm hidden">
-          <p style="margin:0 0 10px;">確定要套用這個手動分配嗎？這會重新產生賽程，先前已選出的勝負紀錄將會清空。</p>
-          <button class="btn gold small" id="confirmManualAssignBtn">確定套用</button>
-          <button class="btn secondary small" id="cancelManualConfirmBtn">取消</button>
+        <div class="type-select-row" id="bracketSizeRow">
+          <label><input type="radio" name="bracketSize" value="8"> 8 人</label>
+          <label><input type="radio" name="bracketSize" value="16"> 16 人</label>
+          <label><input type="radio" name="bracketSize" value="24"> 24 人<span id="bracketSize24Note">（三強循環）</span></label>
+          <label><input type="radio" name="bracketSize" value="32" checked> 32 人</label>
+          <label><input type="radio" name="bracketSize" value="48"> 48 人<span id="bracketSize48Note">（三強循環）</span></label>
+          <label><input type="radio" name="bracketSize" value="64"> 64 人</label>
+        </div>
+        <div id="swissSizeRow" class="hidden" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+          <label for="swissSizeInput" style="font-size:13px; color:var(--ink-soft);">參賽人數（留空＝目前正取名單全部人數）</label>
+          <input type="number" id="swissSizeInput" min="2" placeholder="不限" style="width:90px; padding:6px 8px; border:1px solid var(--line); border-radius:3px; background:var(--paper); color:var(--ink); font-size:13px;">
+        </div>
+        <div class="type-select-row hidden" id="groupSizeRow">
+          <label><input type="radio" name="groupSize" value="8"> 8 人（2組4人）</label>
+          <label><input type="radio" name="groupSize" value="16"> 16 人（4組4人）</label>
+          <label><input type="radio" name="groupSize" value="24"> 24 人（8組3人）</label>
+          <label><input type="radio" name="groupSize" value="32" checked> 32 人（8組4人）</label>
+          <label><input type="radio" name="groupSize" value="36"> 36 人（12組3人）</label>
+          <label><input type="radio" name="groupSize" value="48"> 48 人（16組3人）</label>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn gold small" id="autoShuffleBtn">🔀 隨機分配</button>
+          <button class="btn secondary small" id="openManualAssignBtn">✋ 手動分配</button>
+        </div>
+
+        <div id="shuffleConfirmRow" class="shuffle-confirm hidden">
+          <p style="margin:0 0 10px;">確定要重新洗牌嗎？這會重新產生賽程，先前已選出的勝負紀錄將會清空。</p>
+          <button class="btn gold small" id="confirmShuffleBtn">確定洗牌</button>
+          <button class="btn secondary small" id="cancelShuffleBtn">取消</button>
+        </div>
+
+        <div id="manualAssignPanel" class="hidden" style="margin-top:14px;">
+          <p class="empty-note" style="margin:0 0 10px;">幫每個位置指定人選（隊伍或個人），選「－ 輪空 －」代表該位置空著，對手會直接晉級。</p>
+          <div id="manualSlotsGrid" class="manual-slots-grid"></div>
+          <div style="display:flex; gap:10px; margin-top:12px;">
+            <button class="btn gold small" id="applyManualAssignBtn">套用手動分配</button>
+            <button class="btn secondary small" id="cancelManualAssignBtn">取消</button>
+          </div>
+          <div id="manualConfirmRow" class="shuffle-confirm hidden">
+            <p style="margin:0 0 10px;">確定要套用這個手動分配嗎？這會重新產生賽程，先前已選出的勝負紀錄將會清空。</p>
+            <button class="btn gold small" id="confirmManualAssignBtn">確定套用</button>
+            <button class="btn secondary small" id="cancelManualConfirmBtn">取消</button>
+          </div>
         </div>
       </div>
 
@@ -572,8 +595,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
-const ADMIN_PASSWORD = "55688TSL";
-const REFEREE_PASSWORD = "TSLgggg";
+const ADMIN_PASSWORD = "tsl520";
+const REFEREE_PASSWORD = "tsl888";
 const STORAGE_KEY = "bbx-roster-data-v2";
 
 const SUPABASE_URL = "https://teymozsbdsmxnxziizoy.supabase.co";
@@ -585,6 +608,7 @@ const LANE_COLORS = ["var(--lane-blue)","var(--lane-red)","var(--lane-gold)","va
 let state = { events: [], updatedAt: null };
 let editingState = null;
 let currentEventId = null;
+let activeEventTab = 'ongoing';
 let currentAdminEventId = null;
 let refereeState = null;
 let currentRefereeEventId = null;
@@ -672,7 +696,7 @@ function seedData(){
         id: cryptoId(), name:"個人賽", date:"2026-07-17", type:"individual",
         individualMain:["王小明","陳曉華","林志豪","黃美玲"],
         individualBackup:["張家豪","李佳穎"],
-        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
+        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false
       },
       {
         id: cryptoId(), name:"王牌團體賽", date:"2026-07-24", type:"team",
@@ -684,7 +708,7 @@ function seedData(){
         backupTeams:[
           { id: cryptoId(), name:"C隊", members:["張惠妹","周杰倫"] }
         ],
-        started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
+        started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false
       }
     ]
   };
@@ -818,10 +842,11 @@ function renderEventList(filter){
 
   const events = [...state.events]
     .filter(e=>!q || e.name.toLowerCase().includes(q) || (e.date||"").includes(q))
+    .filter(e=> activeEventTab === 'ended' ? !!e.locked : !e.locked)
     .sort((a,b)=> (b.date||"").localeCompare(a.date||""));
 
   if(events.length===0){
-    wrap.innerHTML = `<p class="empty-note">目前沒有符合條件的賽事。</p>`;
+    wrap.innerHTML = `<p class="empty-note">${activeEventTab === 'ended' ? '目前沒有已結束的賽事。' : '目前沒有符合條件的賽事。'}</p>`;
   }
 
   events.forEach(ev=>{
@@ -891,6 +916,10 @@ function openEventDetail(id){
   }
   document.getElementById('openRegisterBtn').classList.toggle('hidden', !ev.registrationOpen);
   document.getElementById('registerFormPanel').classList.add('hidden');
+  const descBlock = document.getElementById('detailDescriptionBlock');
+  const hasDescription = !!(ev.description && ev.description.trim());
+  descBlock.classList.toggle('hidden', !hasDescription);
+  if(hasDescription) document.getElementById('detailDescriptionText').textContent = ev.description;
   document.getElementById('teamSearchInput').value = "";
   renderRosterDisplay(ev, "");
   document.getElementById('publicEventList').classList.add('hidden');
@@ -1084,13 +1113,14 @@ function openRosterEditor(eventId, mode){
   chip.textContent = typeLabel(ev.type);
   chip.className = 'type-chip ' + (ev.type==='team' ? 'team' : 'individual');
 
-  const rosterSections = ['registrationAdminSection','individualEditor','teamEditor','checkinAdminSection'];
+  const rosterSections = ['descriptionAdminSection','registrationAdminSection','individualEditor','teamEditor','checkinAdminSection'];
   const formatSections = ['bracketAdminSection'];
   const showRoster = mode !== 'format';
   rosterSections.forEach(id=> document.getElementById(id).classList.toggle('hidden', !showRoster));
   formatSections.forEach(id=> document.getElementById(id).classList.toggle('hidden', showRoster));
 
   if(showRoster){
+    document.getElementById('eventDescriptionInput').value = ev.description || '';
     if(ev.type === 'individual'){
       document.getElementById('individualEditor').classList.remove('hidden');
       document.getElementById('teamEditor').classList.add('hidden');
@@ -1313,7 +1343,7 @@ function nextPow2(n){
 // 48 is handled specially (it halves cleanly down to a 3-person round-robin
 // final: 48→24→12→6→3). Every other size is already a power of two.
 function capacityFor(size){
-  return size === 48 ? 48 : nextPow2(size);
+  return (size === 24 || size === 48) ? size : nextPow2(size);
 }
 
 function shuffleArray(arr){
@@ -1363,7 +1393,7 @@ function generateBracket(ev, size){
     ev.bracket = {
       size, capacity: capacityFor(size), slots: buildSlotsArray(ev, size),
       picks: {}, roundRobinPicks: {}, scores: {}, roundRobinScores: {},
-      finalStage: size === 48 ? 'roundrobin' : 'single'
+      finalStage: (size === 24 || size === 48) ? 'roundrobin' : 'single'
     };
   }
   ev.format = 'elimination';
@@ -2611,6 +2641,8 @@ function toggleSizeInputForFormat(format){
   document.getElementById('groupSizeRow').classList.toggle('hidden', format !== 'group');
   const note = document.getElementById('bracketSize48Note');
   if(note) note.classList.toggle('hidden', format === 'doubleElim');
+  const note24 = document.getElementById('bracketSize24Note');
+  if(note24) note24.classList.toggle('hidden', format === 'doubleElim');
 }
 document.querySelectorAll('input[name="tourFormat"]').forEach(r=>{
   r.addEventListener('change', ()=> toggleSizeInputForFormat(r.value));
@@ -2618,6 +2650,8 @@ document.querySelectorAll('input[name="tourFormat"]').forEach(r=>{
 
 function renderBracketAdminSection(ev){
   const startBtn = document.getElementById('toggleStartBtn');
+  const lockBtn = document.getElementById('toggleLockBtn');
+  const lockedNotice = document.getElementById('lockedNotice');
   const setupDiv = document.getElementById('bracketSetup');
   document.getElementById('shuffleConfirmRow').classList.add('hidden');
   document.getElementById('manualAssignPanel').classList.add('hidden');
@@ -2625,7 +2659,13 @@ function renderBracketAdminSection(ev){
   // 分組循環賽 only makes sense for individual events
   document.getElementById('groupFormatLabel').classList.toggle('hidden', ev.type !== 'individual');
   if(ev.started){
+    lockBtn.classList.remove('hidden');
+    lockBtn.textContent = ev.locked ? '🔓 解鎖賽程' : '🔒 鎖定賽程';
+    lockedNotice.classList.toggle('hidden', !ev.locked);
+    document.getElementById('tournamentControls').classList.toggle('hidden', !!ev.locked);
     startBtn.textContent = '重設賽程';
+    startBtn.disabled = !!ev.locked;
+    const interactive = !ev.locked;
     setupDiv.classList.remove('hidden');
     const activeSize = ev.bracket && !ev.group ? ev.bracket.size : (ev.swiss ? ev.swiss.size : (ev.group ? ev.group.size : (ev.doubleElim ? ev.doubleElim.size : 32)));
     document.querySelectorAll('input[name="bracketSize"]').forEach(r=>{
@@ -2647,19 +2687,23 @@ function renderBracketAdminSection(ev){
     document.getElementById('nextSwissRoundBtn').classList.add('hidden');
     if(activeFormat === 'swiss'){
       document.getElementById('swissAdminDisplay').classList.remove('hidden');
-      renderSwiss(ev, document.getElementById('swissAdminDisplay'), true);
-      updateNextRoundButtonState(ev);
+      renderSwiss(ev, document.getElementById('swissAdminDisplay'), interactive);
+      if(interactive) updateNextRoundButtonState(ev);
+      else document.getElementById('nextSwissRoundBtn').classList.add('hidden');
     } else if(activeFormat === 'group'){
       document.getElementById('groupAdminDisplay').classList.remove('hidden');
-      renderGroupStage(ev, document.getElementById('groupAdminDisplay'), true);
+      renderGroupStage(ev, document.getElementById('groupAdminDisplay'), interactive);
     } else if(activeFormat === 'doubleElim'){
       document.getElementById('doubleElimAdminDisplay').classList.remove('hidden');
-      renderDoubleElim(ev, document.getElementById('doubleElimAdminDisplay'), true);
+      renderDoubleElim(ev, document.getElementById('doubleElimAdminDisplay'), interactive);
     } else {
       document.getElementById('bracketAdminDisplay').classList.remove('hidden');
-      renderBracket(ev, document.getElementById('bracketAdminDisplay'), true);
+      renderBracket(ev, document.getElementById('bracketAdminDisplay'), interactive);
     }
   } else {
+    lockBtn.classList.add('hidden');
+    lockedNotice.classList.add('hidden');
+    startBtn.disabled = false;
     startBtn.textContent = '開始比賽';
     setupDiv.classList.add('hidden');
   }
@@ -2668,15 +2712,23 @@ function renderBracketAdminSection(ev){
 document.getElementById('toggleStartBtn').addEventListener('click', ()=>{
   const ev = editingState.events.find(e=>e.id===currentAdminEventId);
   if(!ev) return;
+  if(ev.started && ev.locked) return; // locked — must unlock before resetting
   if(ev.started){
     ev.started = false;
     ev.bracket = null;
     ev.swiss = null;
     ev.group = null;
     ev.doubleElim = null;
+    ev.locked = false;
   } else {
     ev.started = true;
   }
+  renderBracketAdminSection(ev);
+});
+document.getElementById('toggleLockBtn').addEventListener('click', ()=>{
+  const ev = editingState.events.find(e=>e.id===currentAdminEventId);
+  if(!ev) return;
+  ev.locked = !ev.locked;
   renderBracketAdminSection(ev);
 });
 
@@ -2821,7 +2873,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
     if(realNames.length === 3){
       ev.bracket = { size, capacity:3, slots: realNames, picks:{}, roundRobinPicks:{}, scores:{}, roundRobinScores:{}, finalStage:'roundrobin' };
     } else {
-      ev.bracket = { size, capacity, slots, picks:{}, roundRobinPicks:{}, scores:{}, roundRobinScores:{}, finalStage: size===48 ? 'roundrobin' : 'single' };
+      ev.bracket = { size, capacity, slots, picks:{}, roundRobinPicks:{}, scores:{}, roundRobinScores:{}, finalStage: (size===24 || size===48) ? 'roundrobin' : 'single' };
     }
     ev.format = 'elimination';
     ev.started = true;
@@ -2891,7 +2943,7 @@ function renderRefereeEventList(){
         <div>
           <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span></p>
           <span class="ev-date num">${fmtDate(ev.date)}</span>
-          <p class="ev-meta">${ev.format==='swiss' ? '瑞士制' : (ev.format==='group' ? '分組循環賽' : (ev.format==='doubleElim' ? '雙敗淘汰' : '單淘汰賽'))}</p>
+          <p class="ev-meta">${ev.format==='swiss' ? '瑞士制' : (ev.format==='group' ? '分組循環賽' : (ev.format==='doubleElim' ? '雙敗淘汰' : '單淘汰賽'))}${ev.locked ? '　🔒 已鎖定' : ''}</p>
         </div>
         <span class="go">登錄比分 →</span>
       </div>
@@ -2913,6 +2965,10 @@ function openRefereeMatchEntry(id){
 
 function renderRefereeMatchDisplay(ev){
   const container = document.getElementById('refMatchDisplay');
+  if(ev.locked){
+    container.innerHTML = '<p class="empty-note" style="color:var(--lane-gold);">🔒 這場賽事已被主辦方鎖定，暫時無法輸入比分。</p>';
+    return;
+  }
   if(ev.format === 'swiss'){
     renderRefereeSwiss(ev, container);
   } else if(ev.format === 'group'){
@@ -3045,6 +3101,7 @@ document.getElementById('submitRegisterBtn').addEventListener('click', async ()=
 document.getElementById('backFromRosterEditor').addEventListener('click', ()=>{
   const ev = editingState.events.find(e=>e.id===currentAdminEventId);
   if(ev && currentEditorMode === 'full'){
+    ev.description = document.getElementById('eventDescriptionInput').value;
     if(ev.type === 'team'){
       syncTeamGroupFromDOM(ev, 'mainTeams', 'mainTeamsWrap');
       syncTeamGroupFromDOM(ev, 'backupTeams', 'backupTeamsWrap');
@@ -3079,7 +3136,7 @@ document.getElementById('addEventBtn').addEventListener('click', ()=>{
   editingState.events.push({
     id: cryptoId(), name:"新賽事", date:"", type:"individual",
     individualMain:[], individualBackup:[], mainTeams:[], backupTeams:[],
-    started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[]
+    started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false
   });
   renderAdminEventList();
 });
@@ -3106,6 +3163,7 @@ document.getElementById('saveEventsBtn').addEventListener('click', async ()=>{
 document.getElementById('saveRosterBtn').addEventListener('click', async ()=>{
   const ev = editingState.events.find(e=>e.id===currentAdminEventId);
   if(ev && currentEditorMode === 'full'){
+    ev.description = document.getElementById('eventDescriptionInput').value;
     if(ev.type === 'individual'){
       ev.individualMain = document.getElementById('individualMainInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
       ev.individualBackup = document.getElementById('individualBackupInput').value.split('\n').map(s=>s.trim()).filter(Boolean);
@@ -3120,6 +3178,13 @@ document.getElementById('saveRosterBtn').addEventListener('click', async ()=>{
 
 document.getElementById('eventSearchInput').addEventListener('input', e=>{
   renderEventList(e.target.value);
+});
+document.querySelectorAll('.event-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    activeEventTab = tab.dataset.tab;
+    document.querySelectorAll('.event-tab').forEach(t=> t.classList.toggle('active', t === tab));
+    renderEventList(document.getElementById('eventSearchInput').value);
+  });
 });
 document.getElementById('teamSearchInput').addEventListener('input', e=>{
   const ev = state.events.find(x=>x.id===currentEventId);
