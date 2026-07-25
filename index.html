@@ -436,6 +436,10 @@
     <button class="btn secondary" id="backFromAdminEvents">← 返回公開頁面</button>
     <button class="btn gold" id="addEventBtn">＋ 新增賽事</button>
   </div>
+  <div class="type-select-row" id="adminEventTabRow" style="margin-bottom:16px;">
+    <label class="event-tab active" data-admin-tab="ongoing" style="cursor:pointer;">進行中賽事</label>
+    <label class="event-tab" data-admin-tab="ended" style="cursor:pointer;">已結束賽事</label>
+  </div>
   <div id="adminEventListWrap"></div>
   <div class="save-bar">
     <span class="status-msg" id="statusMsgEvents"></span>
@@ -609,6 +613,7 @@ let state = { events: [], updatedAt: null };
 let editingState = null;
 let currentEventId = null;
 let activeEventTab = 'ongoing';
+let activeAdminEventTab = 'ongoing';
 let currentAdminEventId = null;
 let refereeState = null;
 let currentRefereeEventId = null;
@@ -1018,7 +1023,11 @@ function showEventList(){
 function renderAdminEventList(){
   const wrap = document.getElementById('adminEventListWrap');
   wrap.innerHTML = "";
-  editingState.events
+  const filtered = editingState.events.filter(ev=> activeAdminEventTab === 'ended' ? !!ev.locked : !ev.locked);
+  if(filtered.length === 0){
+    wrap.innerHTML = `<p class="empty-note">${activeAdminEventTab === 'ended' ? '目前沒有已結束的賽事。' : '目前沒有進行中的賽事。'}</p>`;
+  }
+  filtered
     .slice()
     .sort((a,b)=> (b.date||"").localeCompare(a.date||""))
     .forEach(ev=>{
@@ -3179,11 +3188,18 @@ document.getElementById('saveRosterBtn').addEventListener('click', async ()=>{
 document.getElementById('eventSearchInput').addEventListener('input', e=>{
   renderEventList(e.target.value);
 });
-document.querySelectorAll('.event-tab').forEach(tab=>{
+document.querySelectorAll('#eventTabRow .event-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     activeEventTab = tab.dataset.tab;
-    document.querySelectorAll('.event-tab').forEach(t=> t.classList.toggle('active', t === tab));
+    document.querySelectorAll('#eventTabRow .event-tab').forEach(t=> t.classList.toggle('active', t === tab));
     renderEventList(document.getElementById('eventSearchInput').value);
+  });
+});
+document.querySelectorAll('#adminEventTabRow .event-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    activeAdminEventTab = tab.dataset.adminTab;
+    document.querySelectorAll('#adminEventTabRow .event-tab').forEach(t=> t.classList.toggle('active', t === tab));
+    renderAdminEventList();
   });
 });
 document.getElementById('teamSearchInput').addEventListener('input', e=>{
