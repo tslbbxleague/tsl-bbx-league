@@ -397,7 +397,7 @@
   </div>
   <div class="event-title-block">
     <h2 style="font-size:20px;">選手戰績榜</h2>
-    <span class="date num" style="font-size:12px;">僅計算個人賽・冠軍10分／亞軍7分／季軍3分／殿軍1分</span>
+    <span class="date num" style="font-size:12px;">僅計算已鎖定的個人賽・冠軍10分／亞軍5分／季軍3分／殿軍1分</span>
   </div>
   <div class="search">
     <input id="leaderboardSearchInput" type="text" placeholder="搜尋暱稱…">
@@ -564,6 +564,7 @@
         </div>
         <div class="type-select-row" id="bracketSizeRow">
           <label><input type="radio" name="bracketSize" value="8"> 8 人</label>
+          <label><input type="radio" name="bracketSize" value="12"> 12 人<span id="bracketSize12Note">（三強循環）</span></label>
           <label><input type="radio" name="bracketSize" value="16"> 16 人</label>
           <label><input type="radio" name="bracketSize" value="24"> 24 人<span id="bracketSize24Note">（三強循環）</span></label>
           <label><input type="radio" name="bracketSize" value="32" checked> 32 人</label>
@@ -799,6 +800,22 @@ function getTournamentStatusBadge(ev){
   return '<span class="type-chip live-badge" style="cursor:default;">🔴 賽程進行中</span>';
 }
 
+// Short label like "64人單淘汰" shown on the event card, once a format has been set up.
+function getFormatSizeLabel(ev){
+  if(!ev.started) return '';
+  if(ev.format === 'swiss' && ev.swiss) return `瑞士制 ${ev.swiss.size}人`;
+  if(ev.format === 'group' && ev.group) return `分組循環賽 ${ev.group.size}人`;
+  if(ev.format === 'doubleElim' && ev.doubleElim) return `雙敗淘汰 ${ev.doubleElim.size}人`;
+  if(ev.bracket) return `單淘汰 ${ev.bracket.size}人`;
+  return '';
+}
+
+function getPointsBadge(ev){
+  if(ev.type !== 'individual') return '';
+  const counts = ev.countsForLeaderboard !== false;
+  return `<span class="type-chip" style="cursor:default; ${counts ? '' : 'opacity:0.6;'}">${counts ? '💯 有積分' : '⭕ 無積分'}</span>`;
+}
+
 function getEventPodium(ev){
   if(ev.format === 'doubleElim' && ev.doubleElim){
     const de = ev.doubleElim;
@@ -870,7 +887,7 @@ function setDetailTab(tab){
 // Aggregates champion/runner-up/3rd/4th counts across every finished
 // individual event. Team events are skipped since their podium entries are
 // team names, not individual nicknames.
-const PLACEMENT_POINTS = { champion:10, runnerUp:7, third:3, fourth:1 };
+const PLACEMENT_POINTS = { champion:10, runnerUp:5, third:3, fourth:1 };
 
 function computeLeaderboard(){
   const board = {};
@@ -883,6 +900,7 @@ function computeLeaderboard(){
   state.events.forEach(ev=>{
     if(ev.type !== 'individual') return;
     if(ev.countsForLeaderboard === false) return;
+    if(!ev.locked) return; // only fully locked/ended events count — an in-progress event's result could still change
     const podium = getEventPodium(ev);
     if(!podium || !podium.champion) return;
     bump(podium.champion, 'champion');
@@ -968,9 +986,12 @@ function renderEventList(filter){
       ? `<button class="btn gold small" data-action="quick-register" data-id="${ev.id}">📝 報名</button>`
       : '';
     const hasTournament = ev.started && (ev.bracket || ev.swiss || ev.group || ev.doubleElim);
+    const formatLabel = getFormatSizeLabel(ev);
+    const formatLabelHtml = formatLabel ? `<span class="type-chip" style="cursor:default;">${escapeHtml(formatLabel)}</span>` : '';
+    const pointsBadgeHtml = getPointsBadge(ev);
     card.innerHTML = `
       <div>
-        <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span> ${liveBadge}</p>
+        <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span> ${formatLabelHtml} ${pointsBadgeHtml} ${liveBadge}</p>
         <span class="ev-date num">${fmtDate(ev.date)}</span>
         <p class="ev-meta">${meta}</p>
         ${podiumHtml}
@@ -1470,7 +1491,7 @@ function nextPow2(n){
 // 48 is handled specially (it halves cleanly down to a 3-person round-robin
 // final: 48→24→12→6→3). Every other size is already a power of two.
 function capacityFor(size){
-  return (size === 24 || size === 48) ? size : nextPow2(size);
+  return (size === 12 || size === 24 || size === 48) ? size : nextPow2(size);
 }
 
 function shuffleArray(arr){
@@ -1502,11 +1523,41 @@ function syncEntrantSourceFromDOM(ev){
 
 // Combines real entrants with enough "bye" (null) slots to reach capacity,
 // then shuffles everything together so byes land randomly in the tree.
+// Spreads byes across distinct first-round matches (at most one bye per
+// match, when there are fewer byes than matches) instead of purely random
+// shuffling. This guarantees every real entrant faces at most one bye ever —
+// no one can luck into skipping two rounds in a row without playing.
 function buildSlotsArray(ev, size){
-  const names = getEntrantNames(ev).slice(0, size);
   const capacity = capacityFor(size);
+  const names = getEntrantNames(ev).slice(0, size);
   const byeCount = Math.max(capacity - names.length, 0);
-  return shuffleArray(names.concat(new Array(byeCount).fill(null)));
+  const totalMatches = capacity / 2;
+  const slots = new Array(capacity).fill(null);
+
+  if(byeCount === 0){
+    const shuffled = shuffleArray(names);
+    for(let i=0;i<capacity;i++) slots[i] = shuffled[i] || null;
+    return slots;
+  }
+
+  const matchOrder = shuffleArray(Array.from({length: totalMatches}, (_, i) => i));
+  const byesPerMatch = new Array(totalMatches).fill(0);
+  for(let b=0; b<byeCount; b++){
+    byesPerMatch[matchOrder[b % totalMatches]] += 1;
+  }
+
+  const shuffledNames = shuffleArray(names);
+  let nameIdx = 0;
+  for(let m=0; m<totalMatches; m++){
+    const byesHere = Math.min(byesPerMatch[m], 2);
+    const realHere = 2 - byesHere;
+    const sidePositions = shuffleArray([0,1]);
+    for(let p=0;p<2;p++){
+      const slotIndex = m*2 + sidePositions[p];
+      slots[slotIndex] = (p < realHere) ? (shuffledNames[nameIdx++] || null) : null;
+    }
+  }
+  return slots;
 }
 
 function generateBracket(ev, size){
@@ -1520,7 +1571,7 @@ function generateBracket(ev, size){
     ev.bracket = {
       size, capacity: capacityFor(size), slots: buildSlotsArray(ev, size),
       picks: {}, roundRobinPicks: {}, scores: {}, roundRobinScores: {},
-      finalStage: (size === 24 || size === 48) ? 'roundrobin' : 'single'
+      finalStage: (size === 12 || size === 24 || size === 48) ? 'roundrobin' : 'single'
     };
   }
   ev.format = 'elimination';
@@ -1581,7 +1632,10 @@ function getRoundEntrants(bracket, round){
 // Setting a pick invalidates every decision made further down the tree,
 // since the entrant feeding into those later matches may have changed.
 function setBracketPick(ev, round, matchIndex, name){
-  ev.bracket.picks[`${round}-${matchIndex}`] = name;
+  const key = `${round}-${matchIndex}`;
+  const previousWinner = ev.bracket.picks[key];
+  ev.bracket.picks[key] = name;
+  if(previousWinner === name) return; // same winner re-confirmed (e.g. score correction) — nothing downstream is stale
   Object.keys(ev.bracket.picks).forEach(k=>{
     if(k === '3rd') return;
     const r = parseInt(k.split('-')[0], 10);
@@ -1867,8 +1921,12 @@ function getGroupAdvancers(ev, groupIdx){
 }
 
 function setGroupPick(ev, groupIdx, matchIdx, name){
-  ev.group.picks[`${groupIdx}-${matchIdx}`] = name;
-  delete ev.group.advanceOverrides[groupIdx]; // result changed, any manual override is stale
+  const key = `${groupIdx}-${matchIdx}`;
+  const previousWinner = ev.group.picks[key];
+  ev.group.picks[key] = name;
+  if(previousWinner !== name){
+    delete ev.group.advanceOverrides[groupIdx]; // result actually changed, any manual override is stale
+  }
 }
 
 function renderGroupStage(ev, containerEl, interactive){
@@ -2020,7 +2078,10 @@ function generateDoubleElim(ev, size){
 
 function wbRounds(de){ return Math.log2(de.capacity); }
 function setWbPick(de, round, matchIndex, name){
-  de.wb.picks[`${round}-${matchIndex}`] = name;
+  const key = `${round}-${matchIndex}`;
+  const previousWinner = de.wb.picks[key];
+  de.wb.picks[key] = name;
+  if(previousWinner === name) return; // same winner re-confirmed — nothing downstream is stale
   Object.keys(de.wb.picks).forEach(k=>{
     const r = parseInt(k.split('-')[0], 10);
     if(r > round) delete de.wb.picks[k];
@@ -2083,7 +2144,10 @@ function lbRoundWinners(de, lbRound){
   return winners;
 }
 function setLbPick(de, lbRound, matchIndex, name){
-  de.lb.picks[`${lbRound}-${matchIndex}`] = name;
+  const key = `${lbRound}-${matchIndex}`;
+  const previousWinner = de.lb.picks[key];
+  de.lb.picks[key] = name;
+  if(previousWinner === name) return; // same winner re-confirmed — nothing downstream is stale
   Object.keys(de.lb.picks).forEach(k=>{
     const r = parseInt(k.split('-')[0], 10);
     if(r > lbRound) delete de.lb.picks[k];
@@ -2248,7 +2312,11 @@ function renderDoubleElim(ev, containerEl, interactive){
         const name = el.dataset.name;
         if(kind === 'wb'){ setWbPick(de, r, m, name); }
         else if(kind === 'lb'){ setLbPick(de, r, m, name); }
-        else if(kind === 'gf'){ de.grandFinal.picks['0'] = name; de.reset.picks = {}; de.reset.scores = {}; }
+        else if(kind === 'gf'){
+          const prevGf = de.grandFinal.picks['0'];
+          de.grandFinal.picks['0'] = name;
+          if(prevGf !== name){ de.reset.picks = {}; de.reset.scores = {}; }
+        }
         else if(kind === 'reset'){ de.reset.picks['0'] = name; }
         renderDoubleElim(ev, containerEl, true);
       });
@@ -2443,10 +2511,11 @@ function renderRefereeDoubleElim(ev, containerEl){
             de2.lb.scores[`${lr}-${m}`] = { a:scoreA, b:scoreB };
             setLbPick(de2, lr, m, winner);
           } else if(roundVal === 'gf'){
+            const prevGf = de2.grandFinal.picks['0'];
             de2.grandFinal.scores = de2.grandFinal.scores || {};
             de2.grandFinal.scores['0'] = { a:scoreA, b:scoreB };
             de2.grandFinal.picks['0'] = winner;
-            de2.reset.picks = {}; de2.reset.scores = {};
+            if(prevGf !== winner){ de2.reset.picks = {}; de2.reset.scores = {}; }
           } else if(roundVal === 'reset'){
             de2.reset.scores = de2.reset.scores || {};
             de2.reset.scores['0'] = { a:scoreA, b:scoreB };
@@ -2770,6 +2839,8 @@ function toggleSizeInputForFormat(format){
   if(note) note.classList.toggle('hidden', format === 'doubleElim');
   const note24 = document.getElementById('bracketSize24Note');
   if(note24) note24.classList.toggle('hidden', format === 'doubleElim');
+  const note12 = document.getElementById('bracketSize12Note');
+  if(note12) note12.classList.toggle('hidden', format === 'doubleElim');
 }
 document.querySelectorAll('input[name="tourFormat"]').forEach(r=>{
   r.addEventListener('change', ()=> toggleSizeInputForFormat(r.value));
@@ -3000,7 +3071,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
     if(realNames.length === 3){
       ev.bracket = { size, capacity:3, slots: realNames, picks:{}, roundRobinPicks:{}, scores:{}, roundRobinScores:{}, finalStage:'roundrobin' };
     } else {
-      ev.bracket = { size, capacity, slots, picks:{}, roundRobinPicks:{}, scores:{}, roundRobinScores:{}, finalStage: (size===24 || size===48) ? 'roundrobin' : 'single' };
+      ev.bracket = { size, capacity, slots, picks:{}, roundRobinPicks:{}, scores:{}, roundRobinScores:{}, finalStage: (size===12 || size===24 || size===48) ? 'roundrobin' : 'single' };
     }
     ev.format = 'elimination';
     ev.started = true;
