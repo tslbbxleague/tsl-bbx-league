@@ -468,7 +468,10 @@
 <div class="admin-wrap hidden" id="adminEventList">
   <div class="admin-toolbar">
     <button class="btn secondary" id="backFromAdminEvents">← 返回公開頁面</button>
-    <button class="btn gold" id="addEventBtn">＋ 新增賽事</button>
+    <div style="display:flex; gap:8px;">
+      <button class="btn secondary" id="openAliasBtn">🔗 戰績榜暱稱合併</button>
+      <button class="btn gold" id="addEventBtn">＋ 新增賽事</button>
+    </div>
   </div>
   <div class="type-select-row" id="adminEventTabRow" style="margin-bottom:16px;">
     <label class="event-tab active" data-admin-tab="ongoing" style="cursor:pointer;">進行中賽事</label>
@@ -478,6 +481,33 @@
   <div class="save-bar">
     <span class="status-msg" id="statusMsgEvents"></span>
     <button class="btn" id="saveEventsBtn">儲存變更</button>
+  </div>
+</div>
+
+<!-- ADMIN: leaderboard name-alias merging -->
+<div class="admin-wrap hidden" id="adminAliasView">
+  <div class="admin-toolbar">
+    <button class="btn secondary" id="backFromAlias">← 返回賽事列表</button>
+  </div>
+  <div class="event-title-block">
+    <h2 style="font-size:18px;">戰績榜暱稱合併</h2>
+  </div>
+  <p class="empty-note" style="margin-bottom:14px;">如果同一個人在不同賽事被打成不同的暱稱（例如 sam、sam1），可以在這裡設定合併規則，戰績榜計算時會自動把它們算成同一人。這不會改動各場賽事本身的名單顯示，只影響戰績榜的統計。</p>
+  <div class="cols admin-list-editor">
+    <div class="col">
+      <label class="field-label">重複的暱稱（例如 sam1）</label>
+      <input type="text" class="roster-input" id="aliasFromInput" placeholder="輸入要合併掉的暱稱">
+    </div>
+    <div class="col">
+      <label class="field-label">要合併成的正確暱稱（例如 sam）</label>
+      <input type="text" class="roster-input" id="aliasToInput" placeholder="輸入正確的暱稱">
+    </div>
+  </div>
+  <button class="btn gold small" id="addAliasBtn">＋ 新增合併規則</button>
+  <div id="aliasListWrap" style="margin-top:16px;"></div>
+  <div class="save-bar">
+    <span class="status-msg" id="statusMsgAlias"></span>
+    <button class="btn" id="saveAliasBtn">儲存變更</button>
   </div>
 </div>
 
@@ -696,6 +726,7 @@ async function loadData(){
     if(error) throw error;
     if(data && data.value){
       state = data.value;
+      state.nameAliases = state.nameAliases || {};
     } else {
       state = seedData();
       const { error: insertError } = await sb
@@ -762,6 +793,7 @@ async function deleteRegistrationRow(key){
 function seedData(){
   return {
     updatedAt: null,
+    nameAliases: {},
     events: [
       {
         id: cryptoId(), name:"個人賽", date:"2026-07-17", type:"individual",
@@ -929,9 +961,22 @@ function setDetailTab(tab){
 // team names, not individual nicknames.
 const PLACEMENT_POINTS = { champion:10, runnerUp:5, third:3, fourth:1 };
 
+function resolveNameAlias(name){
+  if(!name) return name;
+  const aliases = state.nameAliases || {};
+  let resolved = name;
+  let guard = 0;
+  while(aliases[resolved] && aliases[resolved] !== resolved && guard < 10){
+    resolved = aliases[resolved];
+    guard++;
+  }
+  return resolved;
+}
+
 function computeLeaderboard(){
   const board = {};
   function bump(name, key){
+    name = resolveNameAlias(name);
     if(!name) return;
     if(!board[name]) board[name] = { name, champion:0, runnerUp:0, third:0, fourth:0, points:0 };
     board[name][key] += 1;
@@ -1199,6 +1244,62 @@ function showEventList(){
 }
 
 // ---------- ADMIN: event list ----------
+// ---------- leaderboard name-alias merging ----------
+function renderAliasAdmin(){
+  editingState.nameAliases = editingState.nameAliases || {};
+  const wrap = document.getElementById('aliasListWrap');
+  const entries = Object.entries(editingState.nameAliases);
+  if(entries.length === 0){
+    wrap.innerHTML = '<p class="empty-note">目前還沒有設定任何合併規則。</p>';
+    return;
+  }
+  wrap.innerHTML = entries.map(([from, to])=>`
+    <div class="admin-team">
+      <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:0;">
+        <div>${escapeHtml(from)} → <strong>${escapeHtml(to)}</strong></div>
+        <button class="btn danger small" data-action="delete-alias" data-from="${escapeAttr(from)}">刪除</button>
+      </div>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('[data-action="delete-alias"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      delete editingState.nameAliases[btn.dataset.from];
+      renderAliasAdmin();
+    });
+  });
+}
+
+document.getElementById('openAliasBtn').addEventListener('click', ()=>{
+  renderAliasAdmin();
+  document.getElementById('adminEventList').classList.add('hidden');
+  document.getElementById('adminAliasView').classList.remove('hidden');
+});
+document.getElementById('backFromAlias').addEventListener('click', ()=>{
+  document.getElementById('adminAliasView').classList.add('hidden');
+  document.getElementById('adminEventList').classList.remove('hidden');
+  renderAdminEventList();
+});
+document.getElementById('addAliasBtn').addEventListener('click', ()=>{
+  const fromInput = document.getElementById('aliasFromInput');
+  const toInput = document.getElementById('aliasToInput');
+  const from = fromInput.value.trim();
+  const to = toInput.value.trim();
+  if(!from || !to || from === to) return;
+  editingState.nameAliases = editingState.nameAliases || {};
+  editingState.nameAliases[from] = to;
+  fromInput.value = '';
+  toInput.value = '';
+  renderAliasAdmin();
+});
+document.getElementById('saveAliasBtn').addEventListener('click', async ()=>{
+  try{
+    await persist(editingState);
+    showStatus('statusMsgAlias', '已儲存，戰績榜會套用新的合併規則。');
+  }catch(e){
+    showStatus('statusMsgAlias', '儲存失敗，請稍後再試。', true);
+  }
+});
+
 function renderAdminEventList(){
   const wrap = document.getElementById('adminEventListWrap');
   wrap.innerHTML = "";
@@ -3276,7 +3377,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
 });
 
 // ---------- navigation ----------
-const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView'];
+const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView','adminAliasView'];
 function hideAllViews(){
   TOP_LEVEL_VIEWS.forEach(id=> document.getElementById(id).classList.add('hidden'));
   document.getElementById('publicFooter').classList.add('hidden');
