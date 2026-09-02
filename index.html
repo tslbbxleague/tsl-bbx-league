@@ -319,12 +319,22 @@
   .match-control-btns button{ width:100%; }
   .match-control-vs{ display:flex; align-items:center; font-family:'Oswald',sans-serif; color:var(--ink-soft); font-size:12px; }
 
+  .match-control-log-row{
+    display:flex; align-items:center; gap:10px; padding:8px 10px; background:var(--panel);
+    border:1px solid var(--line); border-radius:4px; margin-bottom:6px; font-size:12.5px;
+  }
+  .match-control-log-num{ font-family:'Oswald',sans-serif; color:var(--ink-soft); min-width:52px; }
+  .match-control-log-type{ color:var(--lane-blue); margin-left:auto; }
+  .match-control-log-pts{ font-family:'Oswald',sans-serif; color:var(--lane-gold); font-weight:700; min-width:44px; text-align:right; }
+
   @media (orientation: landscape){
     #matchControlPanel{ max-width:none; display:flex; flex-wrap:wrap; align-items:flex-start; gap:16px; }
     #matchControlBackBtn{ flex-basis:100%; }
     .match-control-camera{ flex:1; min-width:240px; margin:0; }
     .match-control-scoreboard{ flex:1; min-width:260px; margin:0; }
-    #matchControlError, #matchControlPanel > div:last-of-type{ flex-basis:100%; }
+    #matchControlError{ flex-basis:100%; }
+    #matchControlPanel > div{ flex-basis:100%; }
+    .match-control-camera, .match-control-scoreboard{ flex-basis:auto; }
   }
 </style>
 </head>
@@ -534,6 +544,11 @@
       <button class="btn secondary small" id="matchControlUndoBtn" disabled>↩️ 上一步</button>
       <button class="btn gold" id="matchControlConfirmBtn" disabled>✅ 確認送出</button>
     </div>
+
+    <div style="margin-top:18px;">
+      <p style="font-family:'Oswald',sans-serif; font-size:11px; letter-spacing:1.5px; color:var(--ink-soft); text-transform:uppercase; margin:0 0 8px;">比賽紀錄</p>
+      <div id="matchControlLog"></div>
+    </div>
   </div>
 </div>
 
@@ -726,6 +741,9 @@
           <label><input type="radio" name="groupSize" value="36"> 36 人（12組3人）</label>
           <label><input type="radio" name="groupSize" value="48"> 48 人（16組3人）</label>
         </div>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px;">
+          <input type="checkbox" id="onlyCheckedInInput"> 只把「已點名到場」的人排進賽程（未點名的人會被排除，不用手動刪除名單）
+        </label>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn gold small" id="autoShuffleBtn">🔀 隨機分配</button>
           <button class="btn secondary small" id="openManualAssignBtn">✋ 手動分配</button>
@@ -1864,9 +1882,22 @@ function shuffleArray(arr){
 // Team events draw entrants from their team names; individual events draw
 // straight from the 正取 list. Everything downstream (bracket, swiss) just
 // works with a flat list of name strings.
-function getEntrantNames(ev){
-  if(ev.type === 'team') return ev.mainTeams.map(t=>t.name).filter(Boolean);
-  return (ev.individualMain || []).slice();
+function getEntrantNames(ev, checkedInOnly){
+  let names;
+  if(ev.type === 'team') names = ev.mainTeams.map(t=>t.name).filter(Boolean);
+  else names = (ev.individualMain || []).slice();
+  if(checkedInOnly){
+    names = names.filter(n=> !!(ev.checkins && ev.checkins[n]));
+  }
+  return names;
+}
+
+// Used specifically when generating/seeding a tournament, so the "只把已點名
+// 到場的人排進賽程" checkbox is respected without threading a parameter
+// through every generator function's signature.
+function getEntrantNamesForGeneration(ev){
+  const checkbox = document.getElementById('onlyCheckedInInput');
+  return getEntrantNames(ev, checkbox ? checkbox.checked : false);
 }
 
 function syncEntrantSourceFromDOM(ev){
@@ -1887,7 +1918,7 @@ function syncEntrantSourceFromDOM(ev){
 // no one can luck into skipping two rounds in a row without playing.
 function buildSlotsArray(ev, size){
   const capacity = capacityFor(size);
-  const names = getEntrantNames(ev).slice(0, size);
+  const names = getEntrantNamesForGeneration(ev).slice(0, size);
   const byeCount = Math.max(capacity - names.length, 0);
   const totalMatches = capacity / 2;
   const slots = new Array(capacity).fill(null);
@@ -1919,10 +1950,10 @@ function buildSlotsArray(ev, size){
 }
 
 function generateBracket(ev, size){
-  const realCount = Math.min(getEntrantNames(ev).length, size);
+  const realCount = Math.min(getEntrantNamesForGeneration(ev).length, size);
   if(realCount === 3){
     ev.bracket = {
-      size, capacity: 3, slots: shuffleArray(getEntrantNames(ev).slice(0, 3)),
+      size, capacity: 3, slots: shuffleArray(getEntrantNamesForGeneration(ev).slice(0, 3)),
       picks: {}, roundRobinPicks: {}, scores: {}, roundRobinScores: {}, finalStage: 'roundrobin'
     };
   } else {
@@ -2221,7 +2252,7 @@ function groupPairs(n){
 
 function generateGroupStage(ev, size){
   const cfg = GROUP_STAGE_CONFIG[size];
-  const names = getEntrantNames(ev).slice(0, size);
+  const names = getEntrantNamesForGeneration(ev).slice(0, size);
   const byeCount = Math.max(size - names.length, 0);
   const slots = shuffleArray(names.concat(new Array(byeCount).fill(null)));
   const groups = [];
@@ -2863,6 +2894,23 @@ function renderMatchControlScores(){
   const err = validateBeybladeScore(matchControlState.scoreA, matchControlState.scoreB);
   document.getElementById('matchControlConfirmBtn').disabled = !!err;
   document.getElementById('matchControlUndoBtn').disabled = matchControlState.history.length === 0;
+  renderMatchControlLog();
+}
+
+const FINISH_TYPE_LABELS = { 1:'轉停勝利', 2:'爆裂／擊飛勝利', 3:'極限勝利' };
+
+function renderMatchControlLog(){
+  const wrap = document.getElementById('matchControlLog');
+  if(!wrap || !matchControlState) return;
+  const { history, nameA, nameB } = matchControlState;
+  if(history.length === 0){
+    wrap.innerHTML = '<p class="empty-note">尚未登記任何一顆的勝利方式。</p>';
+    return;
+  }
+  wrap.innerHTML = history.map((h,i)=>{
+    const who = h.side === 'a' ? nameA : nameB;
+    return `<div class="match-control-log-row"><span class="match-control-log-num">第 ${i+1} 顆</span><span>${escapeHtml(who)}</span><span class="match-control-log-type">${FINISH_TYPE_LABELS[h.pts]}</span><span class="match-control-log-pts">+${h.pts} 分</span></div>`;
+  }).join('');
 }
 
 function addMatchControlPoint(side, pts){
@@ -3136,7 +3184,7 @@ function renderRefereeBracket(ev, containerEl){
 // entrant count works. size=null/0 means "use everyone currently in the
 // 正取 list". Only an odd total gets a single automatic bye.
 function generateSwiss(ev, size){
-  const allNames = getEntrantNames(ev);
+  const allNames = getEntrantNamesForGeneration(ev);
   const capacity = size ? Math.min(size, allNames.length) : allNames.length;
   const slots = shuffleArray(allNames).slice(0, capacity);
   const round1 = [];
@@ -3420,7 +3468,7 @@ function getSelectedSize(format){
   return parseInt(document.querySelector('input[name="bracketSize"]:checked').value, 10);
 }
 function resolvedCapacity(ev, format, size){
-  if(format === 'swiss') return size || getEntrantNames(ev).length;
+  if(format === 'swiss') return size || getEntrantNamesForGeneration(ev).length;
   if(format === 'group') return size;
   if(format === 'doubleElim') return nextPow2(size);
   return capacityFor(size);
@@ -3444,7 +3492,7 @@ document.getElementById('confirmShuffleBtn').addEventListener('click', ()=>{
 // instead of leaving it to the shuffle. `capacity` is already resolved by
 // the caller (fixed size for elimination, free count for swiss).
 function buildManualSlotsGrid(ev, capacity){
-  const names = getEntrantNames(ev);
+  const names = getEntrantNamesForGeneration(ev);
   const existing = (ev.bracket && ev.bracket.capacity === capacity) ? ev.bracket.slots
                   : (ev.swiss && ev.swiss.size === capacity) ? ev.swiss.entrants
                   : (ev.group && ev.group.size === capacity) ? ev.group.groups.flat()
