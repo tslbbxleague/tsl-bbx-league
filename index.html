@@ -41,6 +41,14 @@
   }
   .num{font-family:'Oswald',sans-serif;}
 
+  #liveTicker{
+    background:var(--backup); color:#1A0509; overflow:hidden; white-space:nowrap;
+    padding:7px 0; font-size:12.5px; font-weight:700; position:sticky; top:0; z-index:50;
+  }
+  #liveTickerText{ display:inline-block; padding-left:100%; animation:ticker-scroll 22s linear infinite; }
+  #liveTickerText span{ margin-right:60px; }
+  @keyframes ticker-scroll{ 0%{ transform:translateX(0); } 100%{ transform:translateX(-100%); } }
+
   header{
     background:
       radial-gradient(circle at 90% -20%, rgba(240,193,67,0.18), transparent 55%),
@@ -363,6 +371,10 @@
 </style>
 </head>
 <body>
+
+<div id="liveTicker" class="hidden">
+  <div id="liveTickerText"></div>
+</div>
 
 <header>
   <div class="brand" id="logoHome">
@@ -861,6 +873,7 @@ async function loadData(){
     if(data && data.value){
       state = data.value;
       state.nameAliases = state.nameAliases || {};
+      state.activeMatches = state.activeMatches || [];
     } else {
       state = seedData();
       const { error: insertError } = await sb
@@ -873,6 +886,7 @@ async function loadData(){
     state = seedData();
   }
   renderEventList();
+  renderLiveTicker();
 }
 
 async function persist(newState){
@@ -928,6 +942,7 @@ function seedData(){
   return {
     updatedAt: null,
     nameAliases: {},
+    activeMatches: [],
     events: [
       {
         id: cryptoId(), name:"個人賽", date:"2026-07-17", type:"individual",
@@ -2924,6 +2939,7 @@ function openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existingSc
   const currentMatchLabel = document.getElementById('refCurrentMatchLabel');
   if(currentMatchLabel) currentMatchLabel.textContent = `🔴 正在登記：${nameA} vs ${nameB}`;
   renderMatchControlScores();
+  setMatchActive(ev.name, nameA, nameB, currentRefereeId);
 }
 
 function closeMatchControl(){
@@ -2933,6 +2949,7 @@ function closeMatchControl(){
   document.getElementById('refMatchDisplay').classList.remove('hidden');
   const currentMatchLabel = document.getElementById('refCurrentMatchLabel');
   if(currentMatchLabel) currentMatchLabel.textContent = '請從下面的對戰列表中，點選要登記比分的對戰。';
+  clearMatchActive(currentRefereeId);
 }
 
 function renderMatchControlScores(){
@@ -3264,14 +3281,29 @@ function generateSwiss(ev, size){
 }
 
 function computeSwissStandings(swiss){
-  const scores = {};
-  swiss.entrants.forEach(n=>{ scores[n] = 0; });
+  const stats = {};
+  swiss.entrants.forEach(n=>{ stats[n] = { wins:0, losses:0, pf:0, pa:0 }; });
   swiss.rounds.forEach(round=>{
     round.forEach(m=>{
-      if(m.winner && scores[m.winner] !== undefined) scores[m.winner] += 1;
+      if(!m.winner) return;
+      if(!m.b){
+        if(stats[m.winner]) stats[m.winner].wins += 1;
+        return;
+      }
+      const loser = m.winner === m.a ? m.b : m.a;
+      if(stats[m.winner]) stats[m.winner].wins += 1;
+      if(stats[loser]) stats[loser].losses += 1;
+      if(m.scoreA !== undefined){
+        const winnerScore = m.winner === m.a ? m.scoreA : m.scoreB;
+        const loserScore = m.winner === m.a ? m.scoreB : m.scoreA;
+        if(stats[m.winner]){ stats[m.winner].pf += winnerScore; stats[m.winner].pa += loserScore; }
+        if(stats[loser]){ stats[loser].pf += loserScore; stats[loser].pa += winnerScore; }
+      }
     });
   });
-  return Object.entries(scores).sort((a,b)=>b[1]-a[1]).map(([name,score])=>({name,score}));
+  return Object.entries(stats)
+    .map(([name, s])=> ({ name, score:s.wins, wins:s.wins, losses:s.losses, pf:s.pf, pa:s.pa, diff:s.pf-s.pa }))
+    .sort((a,b)=> b.wins - a.wins || b.diff - a.diff);
 }
 
 function hasPlayed(swiss, a, b){
@@ -3365,7 +3397,8 @@ function renderSwiss(ev, containerEl, interactive){
   const standings = computeSwissStandings(swiss);
   html += `<div class="admin-subsection"><div class="sub-head"><h4>積分榜</h4></div>`;
   standings.forEach((s,i)=>{
-    html += `<div style="display:flex;justify-content:space-between;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px;max-width:320px;"><span>${i+1}. ${escapeHtml(s.name)}</span><span style="color:var(--lane-gold);font-weight:700;">${s.score} 勝</span></div>`;
+    const diffLabel = (s.diff >= 0 ? '+' : '') + s.diff;
+    html += `<div style="display:flex;justify-content:space-between;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px;max-width:320px;"><span>${i+1}. ${escapeHtml(s.name)}</span><span style="color:var(--lane-gold);font-weight:700;">${s.wins}勝${s.losses}敗　${s.pf}:${s.pa}（${diffLabel}）</span></div>`;
   });
   html += `</div>`;
   containerEl.innerHTML = html;
@@ -3415,7 +3448,8 @@ function renderRefereeSwiss(ev, containerEl){
   const standings = computeSwissStandings(swiss);
   html += `<div class="admin-subsection"><div class="sub-head"><h4>積分榜</h4></div>`;
   standings.forEach((s,i)=>{
-    html += `<div style="display:flex;justify-content:space-between;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px;max-width:320px;"><span>${i+1}. ${escapeHtml(s.name)}</span><span style="color:var(--lane-gold);font-weight:700;">${s.score} 勝</span></div>`;
+    const diffLabel = (s.diff >= 0 ? '+' : '') + s.diff;
+    html += `<div style="display:flex;justify-content:space-between;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px;max-width:320px;"><span>${i+1}. ${escapeHtml(s.name)}</span><span style="color:var(--lane-gold);font-weight:700;">${s.wins}勝${s.losses}敗　${s.pf}:${s.pa}（${diffLabel}）</span></div>`;
   });
   html += `</div>`;
 
@@ -3853,6 +3887,52 @@ async function applyRefereeMatchUpdate(ev, applyFn){
   Object.assign(ev, freshEv);
 }
 
+// ---------- "currently in progress" ticker ----------
+// Whenever a referee opens a match to score it, that match gets pinned to
+// a shared list so anyone watching the page sees a live scrolling banner
+// of everything being played right now. Cleared again once they leave or
+// submit the score.
+function renderLiveTicker(){
+  const wrap = document.getElementById('liveTicker');
+  const now = Date.now();
+  const active = (state.activeMatches || []).filter(m=>{
+    const started = m.startedAt ? new Date(m.startedAt).getTime() : 0;
+    return (now - started) < 30 * 60 * 1000; // drop anything stuck "active" for 30+ minutes
+  });
+  if(active.length === 0){
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  const parts = active.map(m=> `🔴 ${escapeHtml(m.eventName)}：${escapeHtml(m.nameA)} vs ${escapeHtml(m.nameB)}（裁判${escapeHtml(m.refereeId)}）`);
+  const text = parts.join('　｜　');
+  document.getElementById('liveTickerText').innerHTML = `<span>${text}</span><span>${text}</span>`;
+}
+
+async function setMatchActive(eventName, nameA, nameB, refereeId){
+  try{
+    const { data, error } = await sb.from('roster_data').select('value').eq('key', STORAGE_KEY).maybeSingle();
+    if(error) throw error;
+    const freshState = (data && data.value) ? data.value : JSON.parse(JSON.stringify(state));
+    freshState.activeMatches = (freshState.activeMatches || []).filter(m=> m.refereeId !== refereeId);
+    freshState.activeMatches.push({ eventName, nameA, nameB, refereeId, startedAt: new Date().toISOString() });
+    await persist(freshState);
+    renderLiveTicker();
+  }catch(e){ /* non-critical — just skip this update */ }
+}
+
+async function clearMatchActive(refereeId){
+  if(!refereeId) return;
+  try{
+    const { data, error } = await sb.from('roster_data').select('value').eq('key', STORAGE_KEY).maybeSingle();
+    if(error) throw error;
+    const freshState = (data && data.value) ? data.value : JSON.parse(JSON.stringify(state));
+    freshState.activeMatches = (freshState.activeMatches || []).filter(m=> m.refereeId !== refereeId);
+    await persist(freshState);
+    renderLiveTicker();
+  }catch(e){ /* non-critical — just skip this update */ }
+}
+
 document.getElementById('logoHome').addEventListener('click', ()=>{
   hideAllViews();
   document.getElementById('publicFooter').classList.remove('hidden');
@@ -4087,6 +4167,7 @@ async function pollForUpdates(){
     const fresh = data.value;
     if(fresh.updatedAt === state.updatedAt) return; // nothing changed since last check
     state = fresh;
+    renderLiveTicker();
 
     if(!document.getElementById('publicEventList').classList.contains('hidden')){
       renderEventList(document.getElementById('eventSearchInput').value);
