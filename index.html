@@ -295,6 +295,37 @@
   .referee-row input.score-input:focus{ outline:none; border-color:var(--lane-blue); box-shadow:var(--glow-cyan); }
   .referee-error{ color:var(--danger); font-size:12px; margin:6px 0 0; display:none; }
   .referee-hint{ color:var(--ink-soft); font-size:11px; margin:0 0 8px; }
+
+  .referee-match-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--panel); border:1px solid var(--line); border-radius:4px;
+    padding:12px 14px; margin-bottom:10px; max-width:400px; cursor:pointer;
+  }
+  .referee-match-row:hover{ border-color:var(--lane-blue); }
+  .referee-match-row.decided{ border-color:rgba(240,193,67,0.35); }
+  .referee-match-row .referee-name{ flex:1; font-size:13.5px; }
+  .referee-match-row .referee-name.winner{ color:var(--lane-gold); font-weight:700; }
+  .referee-row-score{ font-family:'Oswald',sans-serif; font-size:13px; color:var(--ink-soft); padding:0 8px; white-space:nowrap; }
+
+  #matchControlPanel{ max-width:520px; }
+  .match-control-camera{ margin:14px 0; }
+  .match-control-camera video{ width:100%; max-height:280px; background:#000; border-radius:6px; object-fit:cover; display:block; }
+  .match-control-camera-controls{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .match-control-scoreboard{ display:flex; gap:12px; align-items:stretch; margin-top:8px; }
+  .match-control-side{ flex:1; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:14px; text-align:center; }
+  .match-control-name{ font-size:14px; font-weight:700; margin-bottom:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .match-control-score{ font-family:'Oswald',sans-serif; font-size:42px; font-weight:900; color:var(--lane-gold); margin-bottom:12px; }
+  .match-control-btns{ display:flex; flex-direction:column; gap:6px; }
+  .match-control-btns button{ width:100%; }
+  .match-control-vs{ display:flex; align-items:center; font-family:'Oswald',sans-serif; color:var(--ink-soft); font-size:12px; }
+
+  @media (orientation: landscape){
+    #matchControlPanel{ max-width:none; display:flex; flex-wrap:wrap; align-items:flex-start; gap:16px; }
+    #matchControlBackBtn{ flex-basis:100%; }
+    .match-control-camera{ flex:1; min-width:240px; margin:0; }
+    .match-control-scoreboard{ flex:1; min-width:260px; margin:0; }
+    #matchControlError, #matchControlPanel > div:last-of-type{ flex-basis:100%; }
+  }
 </style>
 </head>
 <body>
@@ -462,6 +493,48 @@
     <h2 id="refMatchEventName" style="font-size:18px;"></h2>
   </div>
   <div id="refMatchDisplay" style="margin-top:12px;"></div>
+
+  <div id="matchControlPanel" class="hidden">
+    <button class="btn secondary small" id="matchControlBackBtn">← 返回對戰列表</button>
+
+    <div class="match-control-camera">
+      <video id="matchControlVideo" autoplay playsinline muted></video>
+      <div class="match-control-camera-controls">
+        <button class="btn secondary small" id="cameraToggleBtn">📷 開啟鏡頭</button>
+        <button class="btn secondary small hidden" id="cameraSwitchBtn">🔄 切換鏡頭</button>
+        <button class="btn danger small hidden" id="cameraRecordBtn">⏺️ 開始錄影</button>
+        <a class="btn gold small hidden" id="cameraDownloadLink" download="match-recording.webm">⬇️ 下載影片</a>
+      </div>
+    </div>
+
+    <div class="match-control-scoreboard">
+      <div class="match-control-side">
+        <div class="match-control-name" id="matchControlNameA"></div>
+        <div class="match-control-score" id="matchControlScoreA">0</div>
+        <div class="match-control-btns">
+          <button class="btn small" data-side="a" data-pts="1">轉停 +1</button>
+          <button class="btn small" data-side="a" data-pts="2">爆裂/擊飛 +2</button>
+          <button class="btn small" data-side="a" data-pts="3">極限 +3</button>
+        </div>
+      </div>
+      <div class="match-control-vs">VS</div>
+      <div class="match-control-side">
+        <div class="match-control-name" id="matchControlNameB"></div>
+        <div class="match-control-score" id="matchControlScoreB">0</div>
+        <div class="match-control-btns">
+          <button class="btn small" data-side="b" data-pts="1">轉停 +1</button>
+          <button class="btn small" data-side="b" data-pts="2">爆裂/擊飛 +2</button>
+          <button class="btn small" data-side="b" data-pts="3">極限 +3</button>
+        </div>
+      </div>
+    </div>
+
+    <p class="referee-error" id="matchControlError"></p>
+    <div style="display:flex; gap:10px; margin-top:14px;">
+      <button class="btn secondary small" id="matchControlUndoBtn" disabled>↩️ 上一步</button>
+      <button class="btn gold" id="matchControlConfirmBtn" disabled>✅ 確認送出</button>
+    </div>
+  </div>
 </div>
 
 <!-- ADMIN: EVENT LIST -->
@@ -975,12 +1048,13 @@ function resolveNameAlias(name){
 
 function computeLeaderboard(){
   const board = {};
-  function bump(name, key){
+  function bump(name, key, ev){
     name = resolveNameAlias(name);
     if(!name) return;
-    if(!board[name]) board[name] = { name, champion:0, runnerUp:0, third:0, fourth:0, points:0 };
+    if(!board[name]) board[name] = { name, champion:0, runnerUp:0, third:0, fourth:0, points:0, events:{champion:[],runnerUp:[],third:[],fourth:[]} };
     board[name][key] += 1;
     board[name].points += PLACEMENT_POINTS[key];
+    board[name].events[key].push({ name: ev.name, date: ev.date });
   }
   state.events.forEach(ev=>{
     if(ev.type !== 'individual') return;
@@ -988,10 +1062,10 @@ function computeLeaderboard(){
     if(!ev.locked) return; // only fully locked/ended events count — an in-progress event's result could still change
     const podium = getEventPodium(ev);
     if(!podium || !podium.champion) return;
-    bump(podium.champion, 'champion');
-    bump(podium.runnerUp, 'runnerUp');
-    if(podium.third && podium.third.length === 1) bump(podium.third[0], 'third');
-    bump(podium.fourth, 'fourth');
+    bump(podium.champion, 'champion', ev);
+    bump(podium.runnerUp, 'runnerUp', ev);
+    if(podium.third && podium.third.length === 1) bump(podium.third[0], 'third', ev);
+    bump(podium.fourth, 'fourth', ev);
   });
   return Object.values(board).sort((a,b)=>
     b.points - a.points || b.champion - a.champion || b.runnerUp - a.runnerUp || b.third - a.third || b.fourth - a.fourth
@@ -1006,17 +1080,35 @@ function renderLeaderboard(filter){
     wrap.innerHTML = '<p class="empty-note">目前還沒有已完成的個人賽對戰紀錄。</p>';
     return;
   }
+  function eventListHtml(label, dotClass, list){
+    if(!list.length) return '';
+    const items = list.map(e=>`<div style="padding:4px 0; font-size:12.5px; color:var(--ink-soft);">${escapeHtml(e.name)}${e.date?`　${escapeHtml(fmtDate(e.date))}`:''}</div>`).join('');
+    return `<div style="margin-top:8px;"><p class="section-title ${dotClass}" style="margin-bottom:2px;"><span class="dot"></span>${label}</p>${items}</div>`;
+  }
   wrap.innerHTML = rows.map((r,i)=>`
-    <div class="event-card" style="cursor:default;">
-      <div>
-        <p class="ev-name">${i+1}. ${escapeHtml(r.name)}</p>
-        <p class="ev-meta">
-          ${r.champion ? `🏆 冠軍 ×${r.champion}　` : ''}${r.runnerUp ? `🥈 亞軍 ×${r.runnerUp}　` : ''}${r.third ? `🥉 季軍 ×${r.third}　` : ''}${r.fourth ? `4️⃣ 殿軍 ×${r.fourth}` : ''}
-        </p>
+    <div class="event-card leaderboard-row" data-idx="${i}" style="cursor:pointer; flex-direction:column; align-items:stretch;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <p class="ev-name">${i+1}. ${escapeHtml(r.name)}</p>
+          <p class="ev-meta">
+            ${r.champion ? `🏆 冠軍 ×${r.champion}　` : ''}${r.runnerUp ? `🥈 亞軍 ×${r.runnerUp}　` : ''}${r.third ? `🥉 季軍 ×${r.third}　` : ''}${r.fourth ? `4️⃣ 殿軍 ×${r.fourth}` : ''}
+          </p>
+        </div>
+        <span class="go">${r.points} 分</span>
       </div>
-      <span class="go">${r.points} 分</span>
+      <div class="leaderboard-detail hidden">
+        ${eventListHtml('🏆 冠軍場次', 'main', r.events.champion)}
+        ${eventListHtml('🥈 亞軍場次', 'main', r.events.runnerUp)}
+        ${eventListHtml('🥉 季軍場次', 'backup', r.events.third)}
+        ${eventListHtml('4️⃣ 殿軍場次', 'backup', r.events.fourth)}
+      </div>
     </div>
   `).join('');
+  wrap.querySelectorAll('.leaderboard-row').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      row.querySelector('.leaderboard-detail').classList.toggle('hidden');
+    });
+  });
 }
 
 function showLeaderboard(){
@@ -2630,23 +2722,260 @@ function validateBeybladeScore(scoreA, scoreB){
 }
 
 function refereeMatchRowHtml(a, b, pick, existingScore, roundIdx, matchIdx){
-  const sa = existingScore ? existingScore.a : '';
-  const sb = existingScore ? existingScore.b : '';
+  const scoreLabel = existingScore ? `${existingScore.a} : ${existingScore.b}` : '尚未登記';
   return `
-    <div class="referee-match${pick ? ' decided' : ''}" data-round="${roundIdx}" data-match="${matchIdx}" data-name-a="${escapeAttr(a)}" data-name-b="${escapeAttr(b)}">
-      <div class="referee-row">
-        <span class="referee-name${pick===a?' winner':''}">${escapeHtml(a)}</span>
-        <input type="number" class="score-input" data-side="a" min="0" max="6" value="${sa}">
-      </div>
-      <div class="referee-row">
-        <span class="referee-name${pick===b?' winner':''}">${escapeHtml(b)}</span>
-        <input type="number" class="score-input" data-side="b" min="0" max="6" value="${sb}">
-      </div>
-      <button class="btn gold small referee-confirm-btn">${pick ? '更新比分' : '確認比分'}</button>
-      <p class="referee-error"></p>
+    <div class="referee-match-row${pick ? ' decided' : ''}" data-round="${roundIdx}" data-match="${matchIdx}" data-name-a="${escapeAttr(a)}" data-name-b="${escapeAttr(b)}">
+      <span class="referee-name${pick===a?' winner':''}">${escapeHtml(a)}</span>
+      <span class="referee-row-score">${scoreLabel}</span>
+      <span class="referee-name${pick===b?' winner':''}">${escapeHtml(b)}</span>
     </div>
   `;
 }
+
+// Reads whatever score (if any) is currently stored for a given match, so
+// the control screen can resume from where it left off.
+function getExistingScore(ev, kind, roundVal, matchVal){
+  if(kind === 'bracket'){
+    if(!ev.bracket) return null;
+    if(roundVal === '3rd') return ev.bracket.scores ? ev.bracket.scores['3rd'] : null;
+    if(roundVal === 'rr') return ev.bracket.roundRobinScores ? ev.bracket.roundRobinScores[matchVal] : null;
+    return ev.bracket.scores ? ev.bracket.scores[`${roundVal}-${matchVal}`] : null;
+  }
+  if(kind === 'swiss'){
+    if(!ev.swiss) return null;
+    const m = ev.swiss.rounds[parseInt(roundVal,10)][parseInt(matchVal,10)];
+    return (m && m.scoreA !== undefined) ? { a:m.scoreA, b:m.scoreB } : null;
+  }
+  if(kind === 'group'){
+    if(!ev.group) return null;
+    return ev.group.scores ? ev.group.scores[`${roundVal}-${matchVal}`] : null;
+  }
+  if(kind === 'doubleElim'){
+    const de = ev.doubleElim;
+    if(!de) return null;
+    if(roundVal === 'gf') return de.grandFinal.scores ? de.grandFinal.scores['0'] : null;
+    if(roundVal === 'reset') return de.reset.scores ? de.reset.scores['0'] : null;
+    if(roundVal.startsWith('wb-')) return de.wb.scores ? de.wb.scores[`${roundVal.slice(3)}-${matchVal}`] : null;
+    if(roundVal.startsWith('lb-')) return de.lb.scores ? de.lb.scores[`${roundVal.slice(3)}-${matchVal}`] : null;
+  }
+  return null;
+}
+
+// Applies a decided score to the right spot in the event's data, covering
+// every tournament format's own storage shape.
+function applyScoreByKind(freshEv, kind, roundVal, matchVal, scoreA, scoreB, winner){
+  if(kind === 'bracket'){
+    if(roundVal === '3rd'){
+      freshEv.bracket.picks = freshEv.bracket.picks || {};
+      freshEv.bracket.scores = freshEv.bracket.scores || {};
+      freshEv.bracket.picks['3rd'] = winner;
+      freshEv.bracket.scores['3rd'] = { a:scoreA, b:scoreB };
+    } else if(roundVal === 'rr'){
+      freshEv.bracket.roundRobinPicks = freshEv.bracket.roundRobinPicks || {};
+      freshEv.bracket.roundRobinScores = freshEv.bracket.roundRobinScores || {};
+      freshEv.bracket.roundRobinPicks[matchVal] = winner;
+      freshEv.bracket.roundRobinScores[matchVal] = { a:scoreA, b:scoreB };
+    } else {
+      const r = parseInt(roundVal, 10), m = parseInt(matchVal, 10);
+      freshEv.bracket.scores = freshEv.bracket.scores || {};
+      freshEv.bracket.scores[`${r}-${m}`] = { a:scoreA, b:scoreB };
+      setBracketPick(freshEv, r, m, winner);
+    }
+  } else if(kind === 'swiss'){
+    const ri = parseInt(roundVal, 10), mi = parseInt(matchVal, 10);
+    const m = freshEv.swiss.rounds[ri][mi];
+    m.scoreA = scoreA; m.scoreB = scoreB; m.winner = winner;
+  } else if(kind === 'group'){
+    const gi = parseInt(roundVal, 10), mi = parseInt(matchVal, 10);
+    freshEv.group.scores = freshEv.group.scores || {};
+    freshEv.group.scores[`${gi}-${mi}`] = { a:scoreA, b:scoreB };
+    setGroupPick(freshEv, gi, mi, winner);
+  } else if(kind === 'doubleElim'){
+    const de2 = freshEv.doubleElim;
+    if(roundVal.startsWith('wb-')){
+      const r = parseInt(roundVal.slice(3), 10), m = parseInt(matchVal, 10);
+      de2.wb.scores = de2.wb.scores || {};
+      de2.wb.scores[`${r}-${m}`] = { a:scoreA, b:scoreB };
+      setWbPick(de2, r, m, winner);
+    } else if(roundVal.startsWith('lb-')){
+      const lr = parseInt(roundVal.slice(3), 10), m = parseInt(matchVal, 10);
+      de2.lb.scores = de2.lb.scores || {};
+      de2.lb.scores[`${lr}-${m}`] = { a:scoreA, b:scoreB };
+      setLbPick(de2, lr, m, winner);
+    } else if(roundVal === 'gf'){
+      const prevGf = de2.grandFinal.picks['0'];
+      de2.grandFinal.scores = de2.grandFinal.scores || {};
+      de2.grandFinal.scores['0'] = { a:scoreA, b:scoreB };
+      de2.grandFinal.picks['0'] = winner;
+      if(prevGf !== winner){ de2.reset.picks = {}; de2.reset.scores = {}; }
+    } else if(roundVal === 'reset'){
+      de2.reset.scores = de2.reset.scores || {};
+      de2.reset.scores['0'] = { a:scoreA, b:scoreB };
+      de2.reset.picks['0'] = winner;
+    }
+  }
+}
+
+// Wires every clickable match row in a referee list to open the dedicated
+// scoring control screen instead of editing inline.
+function wireMatchRowClicks(containerEl, ev, kind){
+  containerEl.querySelectorAll('.referee-match-row').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const roundVal = el.dataset.round;
+      const matchVal = el.dataset.match;
+      const nameA = el.dataset.nameA;
+      const nameB = el.dataset.nameB;
+      const existing = getExistingScore(ev, kind, roundVal, matchVal);
+      openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existing);
+    });
+  });
+}
+
+// ---------- match control screen (point-by-point scoring) ----------
+let matchControlState = null;
+
+function openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existingScore){
+  matchControlState = {
+    ev, kind, roundVal, matchVal, nameA, nameB,
+    scoreA: existingScore ? existingScore.a : 0,
+    scoreB: existingScore ? existingScore.b : 0,
+    history: []
+  };
+  document.getElementById('refMatchDisplay').classList.add('hidden');
+  document.getElementById('matchControlPanel').classList.remove('hidden');
+  document.getElementById('matchControlNameA').textContent = nameA;
+  document.getElementById('matchControlNameB').textContent = nameB;
+  document.getElementById('matchControlError').textContent = '';
+  renderMatchControlScores();
+}
+
+function closeMatchControl(){
+  matchControlState = null;
+  stopCamera();
+  document.getElementById('matchControlPanel').classList.add('hidden');
+  document.getElementById('refMatchDisplay').classList.remove('hidden');
+}
+
+function renderMatchControlScores(){
+  if(!matchControlState) return;
+  document.getElementById('matchControlScoreA').textContent = matchControlState.scoreA;
+  document.getElementById('matchControlScoreB').textContent = matchControlState.scoreB;
+  const err = validateBeybladeScore(matchControlState.scoreA, matchControlState.scoreB);
+  document.getElementById('matchControlConfirmBtn').disabled = !!err;
+  document.getElementById('matchControlUndoBtn').disabled = matchControlState.history.length === 0;
+}
+
+function addMatchControlPoint(side, pts){
+  if(!matchControlState) return;
+  matchControlState.history.push({ side, pts });
+  if(side === 'a') matchControlState.scoreA += pts; else matchControlState.scoreB += pts;
+  document.getElementById('matchControlError').textContent = '';
+  renderMatchControlScores();
+}
+
+function undoMatchControlPoint(){
+  if(!matchControlState) return;
+  const last = matchControlState.history.pop();
+  if(!last) return;
+  if(last.side === 'a') matchControlState.scoreA -= last.pts; else matchControlState.scoreB -= last.pts;
+  renderMatchControlScores();
+}
+
+async function confirmMatchControl(){
+  if(!matchControlState) return;
+  const { ev, kind, roundVal, matchVal, nameA, nameB, scoreA, scoreB } = matchControlState;
+  const err = validateBeybladeScore(scoreA, scoreB);
+  if(err){
+    document.getElementById('matchControlError').textContent = err;
+    return;
+  }
+  const winner = scoreA > scoreB ? nameA : nameB;
+  const btn = document.getElementById('matchControlConfirmBtn');
+  btn.disabled = true;
+  try{
+    await applyRefereeMatchUpdate(ev, freshEv=> applyScoreByKind(freshEv, kind, roundVal, matchVal, scoreA, scoreB, winner));
+    showStatus('refStatusMsg', '已儲存比分。');
+    closeMatchControl();
+    renderRefereeMatchDisplay(ev);
+  }catch(e){
+    document.getElementById('matchControlError').textContent = '儲存失敗，請檢查網路後再試一次。';
+    btn.disabled = false;
+  }
+}
+
+document.querySelectorAll('#matchControlPanel .match-control-btns button').forEach(btn=>{
+  btn.addEventListener('click', ()=> addMatchControlPoint(btn.dataset.side, parseInt(btn.dataset.pts, 10)));
+});
+document.getElementById('matchControlUndoBtn').addEventListener('click', undoMatchControlPoint);
+document.getElementById('matchControlConfirmBtn').addEventListener('click', confirmMatchControl);
+document.getElementById('matchControlBackBtn').addEventListener('click', closeMatchControl);
+
+// ---------- optional camera recording (for referees recording the battle) ----------
+let cameraStream = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let cameraFacingMode = 'environment';
+
+async function startCamera(){
+  try{
+    if(cameraStream) cameraStream.getTracks().forEach(t=>t.stop());
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: cameraFacingMode }, audio:true });
+    document.getElementById('matchControlVideo').srcObject = cameraStream;
+    document.getElementById('cameraToggleBtn').textContent = '📷 關閉鏡頭';
+    document.getElementById('cameraSwitchBtn').classList.remove('hidden');
+    document.getElementById('cameraRecordBtn').classList.remove('hidden');
+  }catch(e){
+    alert('無法開啟鏡頭，請確認已允許瀏覽器使用攝影機權限。');
+  }
+}
+
+function stopCamera(){
+  if(mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+  if(cameraStream){ cameraStream.getTracks().forEach(t=>t.stop()); cameraStream = null; }
+  const video = document.getElementById('matchControlVideo');
+  if(video) video.srcObject = null;
+  const toggleBtn = document.getElementById('cameraToggleBtn');
+  if(toggleBtn) toggleBtn.textContent = '📷 開啟鏡頭';
+  const switchBtn = document.getElementById('cameraSwitchBtn');
+  if(switchBtn) switchBtn.classList.add('hidden');
+  const recordBtn = document.getElementById('cameraRecordBtn');
+  if(recordBtn){ recordBtn.classList.add('hidden'); recordBtn.textContent = '⏺️ 開始錄影'; }
+}
+
+document.getElementById('cameraToggleBtn').addEventListener('click', ()=>{
+  if(cameraStream) stopCamera(); else startCamera();
+});
+document.getElementById('cameraSwitchBtn').addEventListener('click', ()=>{
+  cameraFacingMode = cameraFacingMode === 'environment' ? 'user' : 'environment';
+  startCamera();
+});
+document.getElementById('cameraRecordBtn').addEventListener('click', ()=>{
+  if(!cameraStream) return;
+  const recordBtn = document.getElementById('cameraRecordBtn');
+  if(mediaRecorder && mediaRecorder.state === 'recording'){
+    mediaRecorder.stop();
+    recordBtn.textContent = '⏺️ 開始錄影';
+    return;
+  }
+  recordedChunks = [];
+  try{
+    mediaRecorder = new MediaRecorder(cameraStream);
+  }catch(e){
+    alert('這個瀏覽器不支援錄影功能。');
+    return;
+  }
+  mediaRecorder.ondataavailable = e=>{ if(e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = ()=>{
+    const blob = new Blob(recordedChunks, { type:'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const link = document.getElementById('cameraDownloadLink');
+    link.href = url;
+    link.classList.remove('hidden');
+  };
+  mediaRecorder.start();
+  recordBtn.textContent = '⏹️ 停止錄影';
+  document.getElementById('cameraDownloadLink').classList.add('hidden');
+});
 
 function renderRefereeGroup(ev, containerEl){
   const group = ev.group;
@@ -2679,36 +3008,7 @@ function renderRefereeGroup(ev, containerEl){
     html += `</div></div>`;
   });
   containerEl.innerHTML = html;
-
-  containerEl.querySelectorAll('.referee-match').forEach(matchEl=>{
-    const btn = matchEl.querySelector('.referee-confirm-btn');
-    btn.addEventListener('click', async ()=>{
-      const scoreA = parseInt(matchEl.querySelector('input[data-side="a"]').value, 10);
-      const scoreB = parseInt(matchEl.querySelector('input[data-side="b"]').value, 10);
-      const errEl = matchEl.querySelector('.referee-error');
-      const err = validateBeybladeScore(scoreA, scoreB);
-      if(err){
-        errEl.textContent = err;
-        errEl.style.display = 'block';
-        return;
-      }
-      const gi = parseInt(matchEl.dataset.round, 10), mi = parseInt(matchEl.dataset.match, 10);
-      const winner = scoreA > scoreB ? matchEl.dataset.nameA : matchEl.dataset.nameB;
-      btn.disabled = true;
-      try{
-        await applyRefereeMatchUpdate(ev, freshEv=>{
-          freshEv.group.scores = freshEv.group.scores || {};
-          freshEv.group.scores[`${gi}-${mi}`] = { a:scoreA, b:scoreB };
-          setGroupPick(freshEv, gi, mi, winner);
-        });
-        showStatus('refStatusMsg', '已儲存比分。');
-        renderRefereeGroup(ev, containerEl);
-      }catch(e){
-        showStatus('refStatusMsg', '儲存失敗，請檢查網路後再試一次。', true);
-        btn.disabled = false;
-      }
-    });
-  });
+  wireMatchRowClicks(containerEl, ev, 'group');
 }
 
 function renderRefereeDoubleElim(ev, containerEl){
@@ -2771,57 +3071,7 @@ function renderRefereeDoubleElim(ev, containerEl){
   }
 
   containerEl.innerHTML = html;
-
-  containerEl.querySelectorAll('.referee-match').forEach(matchEl=>{
-    const btn = matchEl.querySelector('.referee-confirm-btn');
-    btn.addEventListener('click', async ()=>{
-      const scoreA = parseInt(matchEl.querySelector('input[data-side="a"]').value, 10);
-      const scoreB = parseInt(matchEl.querySelector('input[data-side="b"]').value, 10);
-      const errEl = matchEl.querySelector('.referee-error');
-      const err = validateBeybladeScore(scoreA, scoreB);
-      if(err){
-        errEl.textContent = err;
-        errEl.style.display = 'block';
-        return;
-      }
-      const nameA = matchEl.dataset.nameA, nameB = matchEl.dataset.nameB;
-      const winner = scoreA > scoreB ? nameA : nameB;
-      const roundVal = matchEl.dataset.round;
-      const matchVal = matchEl.dataset.match;
-      btn.disabled = true;
-      try{
-        await applyRefereeMatchUpdate(ev, freshEv=>{
-          const de2 = freshEv.doubleElim;
-          if(roundVal.startsWith('wb-')){
-            const r = parseInt(roundVal.slice(3), 10), m = parseInt(matchVal, 10);
-            de2.wb.scores = de2.wb.scores || {};
-            de2.wb.scores[`${r}-${m}`] = { a:scoreA, b:scoreB };
-            setWbPick(de2, r, m, winner);
-          } else if(roundVal.startsWith('lb-')){
-            const lr = parseInt(roundVal.slice(3), 10), m = parseInt(matchVal, 10);
-            de2.lb.scores = de2.lb.scores || {};
-            de2.lb.scores[`${lr}-${m}`] = { a:scoreA, b:scoreB };
-            setLbPick(de2, lr, m, winner);
-          } else if(roundVal === 'gf'){
-            const prevGf = de2.grandFinal.picks['0'];
-            de2.grandFinal.scores = de2.grandFinal.scores || {};
-            de2.grandFinal.scores['0'] = { a:scoreA, b:scoreB };
-            de2.grandFinal.picks['0'] = winner;
-            if(prevGf !== winner){ de2.reset.picks = {}; de2.reset.scores = {}; }
-          } else if(roundVal === 'reset'){
-            de2.reset.scores = de2.reset.scores || {};
-            de2.reset.scores['0'] = { a:scoreA, b:scoreB };
-            de2.reset.picks['0'] = winner;
-          }
-        });
-        showStatus('refStatusMsg', '已儲存比分。');
-        renderRefereeDoubleElim(ev, containerEl);
-      }catch(e){
-        showStatus('refStatusMsg', '儲存失敗，請檢查網路後再試一次。', true);
-        btn.disabled = false;
-      }
-    });
-  });
+  wireMatchRowClicks(containerEl, ev, 'doubleElim');
 }
 
 function renderRefereeBracket(ev, containerEl){
@@ -2878,54 +3128,7 @@ function renderRefereeBracket(ev, containerEl){
     html += renderBracketPlacements(bracket, rounds);
   }
   containerEl.innerHTML = html;
-
-  containerEl.querySelectorAll('.referee-match').forEach(matchEl=>{
-    const btn = matchEl.querySelector('.referee-confirm-btn');
-    btn.addEventListener('click', async ()=>{
-      const inputA = matchEl.querySelector('input[data-side="a"]');
-      const inputB = matchEl.querySelector('input[data-side="b"]');
-      const scoreA = parseInt(inputA.value, 10);
-      const scoreB = parseInt(inputB.value, 10);
-      const errEl = matchEl.querySelector('.referee-error');
-      const err = validateBeybladeScore(scoreA, scoreB);
-      if(err){
-        errEl.textContent = err;
-        errEl.style.display = 'block';
-        return;
-      }
-      const nameA = matchEl.dataset.nameA;
-      const nameB = matchEl.dataset.nameB;
-      const winner = scoreA > scoreB ? nameA : nameB;
-      const roundVal = matchEl.dataset.round;
-      const matchVal = matchEl.dataset.match;
-      btn.disabled = true;
-      try{
-        await applyRefereeMatchUpdate(ev, freshEv=>{
-          if(roundVal === 'rr'){
-            freshEv.bracket.roundRobinScores = freshEv.bracket.roundRobinScores || {};
-            freshEv.bracket.roundRobinPicks = freshEv.bracket.roundRobinPicks || {};
-            freshEv.bracket.roundRobinScores[matchVal] = { a:scoreA, b:scoreB };
-            freshEv.bracket.roundRobinPicks[matchVal] = winner;
-          } else if(roundVal === '3rd'){
-            freshEv.bracket.scores = freshEv.bracket.scores || {};
-            freshEv.bracket.picks = freshEv.bracket.picks || {};
-            freshEv.bracket.scores['3rd'] = { a:scoreA, b:scoreB };
-            freshEv.bracket.picks['3rd'] = winner;
-          } else {
-            const r = parseInt(roundVal, 10), m = parseInt(matchVal, 10);
-            freshEv.bracket.scores = freshEv.bracket.scores || {};
-            freshEv.bracket.scores[`${r}-${m}`] = { a:scoreA, b:scoreB };
-            setBracketPick(freshEv, r, m, winner);
-          }
-        });
-        showStatus('refStatusMsg', '已儲存比分。');
-        renderRefereeBracket(ev, containerEl);
-      }catch(e){
-        showStatus('refStatusMsg', '儲存失敗，請檢查網路後再試一次。', true);
-        btn.disabled = false;
-      }
-    });
-  });
+  wireMatchRowClicks(containerEl, ev, 'bracket');
 }
 
 
@@ -3071,35 +3274,7 @@ function renderRefereeSwiss(ev, containerEl){
   html += `</div>`;
   containerEl.innerHTML = html;
 
-  containerEl.querySelectorAll('.referee-match').forEach(matchEl=>{
-    const btn = matchEl.querySelector('.referee-confirm-btn');
-    btn.addEventListener('click', async ()=>{
-      const scoreA = parseInt(matchEl.querySelector('input[data-side="a"]').value, 10);
-      const scoreB = parseInt(matchEl.querySelector('input[data-side="b"]').value, 10);
-      const errEl = matchEl.querySelector('.referee-error');
-      const err = validateBeybladeScore(scoreA, scoreB);
-      if(err){
-        errEl.textContent = err;
-        errEl.style.display = 'block';
-        return;
-      }
-      const ri = parseInt(matchEl.dataset.round, 10), mi = parseInt(matchEl.dataset.match, 10);
-      btn.disabled = true;
-      try{
-        await applyRefereeMatchUpdate(ev, freshEv=>{
-          const m = freshEv.swiss.rounds[ri][mi];
-          m.scoreA = scoreA;
-          m.scoreB = scoreB;
-          m.winner = scoreA > scoreB ? m.a : m.b;
-        });
-        showStatus('refStatusMsg', '已儲存比分。');
-        renderRefereeSwiss(ev, containerEl);
-      }catch(e){
-        showStatus('refStatusMsg', '儲存失敗，請檢查網路後再試一次。', true);
-        btn.disabled = false;
-      }
-    });
-  });
+  wireMatchRowClicks(containerEl, ev, 'swiss');
 }
 
 function updateNextRoundButtonState(ev){
