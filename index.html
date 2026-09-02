@@ -329,31 +329,62 @@
 
   #matchControlPanel{ max-width:560px; }
   .match-control-stage{
-    position:relative; margin:14px 0; min-height:340px; border-radius:6px; overflow:hidden; background:#000;
+    position:relative; margin:14px 0; min-height:380px; border-radius:8px; overflow:hidden;
+    background:
+      radial-gradient(circle at 15% 10%, rgba(58,199,255,0.10), transparent 45%),
+      radial-gradient(circle at 85% 90%, rgba(240,193,67,0.09), transparent 45%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 26px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 26px),
+      #050506;
+    border:1px solid rgba(240,193,67,0.25);
+    box-shadow:0 0 24px rgba(240,193,67,0.08);
   }
   .match-control-stage video{
     position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; background:#000;
   }
   .match-control-camera-controls{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
   .match-control-scoreboard{
-    position:relative; z-index:2; display:flex; min-height:340px; height:100%;
+    position:relative; z-index:2; display:flex; min-height:380px; height:100%;
   }
   .match-control-side{
     flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;
-    background:var(--panel); border:1px solid var(--line); padding:14px; text-align:center;
+    background:rgba(21,22,28,0.55); border:1px solid rgba(240,193,67,0.15); padding:18px 12px; text-align:center;
     transition:background .2s ease;
   }
   /* Once the camera is actually running, the side panels become translucent
      so the battle underneath stays visible through the score controls —
      everything fits in one screen instead of stacking camera above scoring. */
   .match-control-stage.camera-active .match-control-side{
-    background:rgba(10,10,13,0.42); backdrop-filter:blur(1.5px); border-color:rgba(240,193,67,0.25);
+    background:rgba(10,10,13,0.38); backdrop-filter:blur(1.5px); border-color:rgba(240,193,67,0.3);
   }
-  .match-control-name{ font-size:14px; font-weight:700; margin-bottom:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-shadow:0 1px 3px rgba(0,0,0,0.6); }
-  .match-control-score{ font-family:'Oswald',sans-serif; font-size:42px; font-weight:900; color:var(--lane-gold); margin-bottom:12px; text-shadow:0 1px 4px rgba(0,0,0,0.7); }
-  .match-control-btns{ display:flex; flex-direction:column; gap:6px; width:100%; }
-  .match-control-btns button{ width:100%; opacity:0.94; }
-  .match-control-vs{ display:flex; align-items:center; font-family:'Oswald',sans-serif; color:var(--ink-soft); font-size:12px; text-shadow:0 1px 3px rgba(0,0,0,0.6); }
+  .match-control-avatar-img{
+    width:96px; height:96px; border-radius:50%; object-fit:cover; margin-bottom:12px;
+    border:3px solid var(--lane-gold);
+    box-shadow:0 0 4px rgba(240,193,67,0.9) inset, 0 0 20px rgba(240,193,67,0.5);
+  }
+  .match-control-avatar-img.hidden{ display:none; }
+  .match-control-name{
+    font-size:16px; font-weight:900; margin-bottom:10px; letter-spacing:0.5px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;
+    text-shadow:0 1px 4px rgba(0,0,0,0.8);
+  }
+  .match-control-score{
+    font-family:'Oswald',sans-serif; font-size:56px; font-weight:900; color:var(--lane-gold);
+    margin-bottom:16px; letter-spacing:1px;
+    text-shadow:0 0 22px rgba(240,193,67,0.65), 0 0 6px rgba(240,193,67,0.9), 0 2px 4px rgba(0,0,0,0.8);
+  }
+  .match-control-btns{ display:flex; flex-direction:column; gap:7px; width:100%; }
+  .match-control-btns button{
+    width:100%; background:linear-gradient(135deg, var(--lane-blue), #1c8fc9); border:none;
+    color:#031018; font-weight:800; letter-spacing:0.3px;
+    box-shadow:0 0 10px rgba(58,199,255,0.3); transition:transform .1s ease, box-shadow .15s ease, opacity .15s ease;
+  }
+  .match-control-btns button:hover:not(:disabled){ transform:translateY(-1px); box-shadow:0 0 18px rgba(58,199,255,0.6); }
+  .match-control-btns button:disabled{ opacity:0.3; box-shadow:none; }
+  .match-control-vs{
+    display:flex; align-items:center; font-family:'Oswald',sans-serif; font-weight:900; font-size:16px;
+    color:var(--lane-gold); text-shadow:0 0 12px rgba(240,193,67,0.7);
+  }
 
   .match-control-log-row{
     display:flex; align-items:center; gap:10px; padding:8px 10px; background:var(--panel);
@@ -552,6 +583,7 @@
       <video id="matchControlVideo" autoplay playsinline muted></video>
       <div class="match-control-scoreboard">
         <div class="match-control-side">
+          <img id="matchControlAvatarA" class="match-control-avatar-img hidden" alt="">
           <div class="match-control-name" id="matchControlNameA"></div>
           <div class="match-control-score" id="matchControlScoreA">0</div>
           <div class="match-control-btns">
@@ -562,6 +594,7 @@
         </div>
         <div class="match-control-vs">VS</div>
         <div class="match-control-side">
+          <img id="matchControlAvatarB" class="match-control-avatar-img hidden" alt="">
           <div class="match-control-name" id="matchControlNameB"></div>
           <div class="match-control-score" id="matchControlScoreB">0</div>
           <div class="match-control-btns">
@@ -599,7 +632,7 @@
     <button class="btn secondary" id="backFromAdminEvents">← 返回公開頁面</button>
     <div style="display:flex; gap:8px;">
       <button class="btn secondary" id="openAliasBtn">🔗 戰績榜暱稱合併</button>
-      <button class="btn secondary" id="openAvatarBtn">🖼️ 選手頭貼設定</button>
+      <button class="btn secondary" id="openAvatarBtn">👤 選手資料設定</button>
       <button class="btn gold" id="addEventBtn">＋ 新增賽事</button>
     </div>
   </div>
@@ -647,7 +680,7 @@
     <button class="btn secondary" id="backFromAvatar">← 返回賽事列表</button>
   </div>
   <div class="event-title-block">
-    <h2 style="font-size:18px;">選手頭貼設定</h2>
+    <h2 style="font-size:18px;">選手資料設定</h2>
   </div>
   <p class="empty-note" style="margin-bottom:14px;">幫特定暱稱設定頭貼，該暱稱出現在對戰列表、計分畫面、正取名單時就會顯示這張照片。</p>
   <div class="cols admin-list-editor">
@@ -1532,6 +1565,20 @@ function getAvatarHtml(name, size){
   const url = state.playerAvatars && state.playerAvatars[name];
   if(!url) return '';
   return `<img src="${url}" class="player-avatar" style="width:${size}px; height:${size}px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:6px; border:1px solid var(--line);">`;
+}
+
+// Sets (or hides) one of the large fighter-card avatars on the match control screen.
+function setMatchControlAvatar(imgId, name){
+  const img = document.getElementById(imgId);
+  if(!img) return;
+  const url = state.playerAvatars && state.playerAvatars[name];
+  if(url){
+    img.src = url;
+    img.classList.remove('hidden');
+  } else {
+    img.removeAttribute('src');
+    img.classList.add('hidden');
+  }
 }
 
 function renderAvatarAdmin(){
@@ -3066,8 +3113,10 @@ function openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existingSc
   };
   document.getElementById('refMatchDisplay').classList.add('hidden');
   document.getElementById('matchControlPanel').classList.remove('hidden');
-  document.getElementById('matchControlNameA').innerHTML = getAvatarHtml(nameA, 32) + escapeHtml(nameA);
-  document.getElementById('matchControlNameB').innerHTML = getAvatarHtml(nameB, 32) + escapeHtml(nameB);
+  document.getElementById('matchControlNameA').textContent = nameA;
+  document.getElementById('matchControlNameB').textContent = nameB;
+  setMatchControlAvatar('matchControlAvatarA', nameA);
+  setMatchControlAvatar('matchControlAvatarB', nameB);
   const initialErrEl = document.getElementById('matchControlError');
   initialErrEl.textContent = '';
   initialErrEl.style.display = 'none';
@@ -3095,6 +3144,13 @@ function renderMatchControlScores(){
   const err = validateBeybladeScore(matchControlState.scoreA, matchControlState.scoreB, threshold);
   document.getElementById('matchControlConfirmBtn').disabled = !!err;
   document.getElementById('matchControlUndoBtn').disabled = matchControlState.history.length === 0;
+
+  // Once either side reaches the win threshold, the match is decided — lock
+  // out further scoring so no one can click their way past the valid range.
+  // "上一步" still works if a click needs correcting.
+  const matchDecided = Math.max(matchControlState.scoreA, matchControlState.scoreB) >= threshold;
+  document.querySelectorAll('#matchControlPanel .match-control-btns button').forEach(b=>{ b.disabled = matchDecided; });
+
   const errEl = document.getElementById('matchControlError');
   const bothZero = matchControlState.scoreA === 0 && matchControlState.scoreB === 0;
   if(err && !bothZero){
