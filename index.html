@@ -599,6 +599,7 @@
     <button class="btn secondary" id="backFromAdminEvents">← 返回公開頁面</button>
     <div style="display:flex; gap:8px;">
       <button class="btn secondary" id="openAliasBtn">🔗 戰績榜暱稱合併</button>
+      <button class="btn secondary" id="openAvatarBtn">🖼️ 選手頭貼設定</button>
       <button class="btn gold" id="addEventBtn">＋ 新增賽事</button>
     </div>
   </div>
@@ -637,6 +638,34 @@
   <div class="save-bar">
     <span class="status-msg" id="statusMsgAlias"></span>
     <button class="btn" id="saveAliasBtn">儲存變更</button>
+  </div>
+</div>
+
+<!-- ADMIN: player avatars -->
+<div class="admin-wrap hidden" id="adminAvatarView">
+  <div class="admin-toolbar">
+    <button class="btn secondary" id="backFromAvatar">← 返回賽事列表</button>
+  </div>
+  <div class="event-title-block">
+    <h2 style="font-size:18px;">選手頭貼設定</h2>
+  </div>
+  <p class="empty-note" style="margin-bottom:14px;">幫特定暱稱設定頭貼，該暱稱出現在對戰列表、計分畫面、正取名單時就會顯示這張照片。</p>
+  <div class="cols admin-list-editor">
+    <div class="col">
+      <label class="field-label">暱稱（要完全一致）</label>
+      <input type="text" class="roster-input" id="avatarNameInput" placeholder="輸入要設定頭貼的暱稱">
+    </div>
+    <div class="col">
+      <label class="field-label">選擇照片</label>
+      <input type="file" id="avatarFileInput" accept="image/*" class="roster-input">
+    </div>
+  </div>
+  <button class="btn gold small" id="addAvatarBtn">＋ 新增／更新頭貼</button>
+  <p class="referee-error" id="avatarError"></p>
+  <div id="avatarListWrap" style="margin-top:16px;"></div>
+  <div class="save-bar">
+    <span class="status-msg" id="statusMsgAvatar"></span>
+    <button class="btn" id="saveAvatarBtn">儲存變更</button>
   </div>
 </div>
 
@@ -873,6 +902,7 @@ async function loadData(){
     if(data && data.value){
       state = data.value;
       state.nameAliases = state.nameAliases || {};
+      state.playerAvatars = state.playerAvatars || {};
       state.activeMatches = state.activeMatches || [];
     } else {
       state = seedData();
@@ -942,6 +972,7 @@ function seedData(){
   return {
     updatedAt: null,
     nameAliases: {},
+    playerAvatars: {},
     activeMatches: [],
     events: [
       {
@@ -1349,7 +1380,7 @@ function renderRosterDisplay(ev, filter){
     const main = ev.individualMain.filter(n=>!q || n.toLowerCase().includes(q));
     const backup = ev.individualBackup.filter(n=>!q || n.toLowerCase().includes(q));
 
-    const mainBibs = main.map((n,idx)=>`<div class="bib"><span class="bib-num">${String(idx+1).padStart(2,'0')}</span>${escapeHtml(n)}${ev.checkins && ev.checkins[n] ? '<span class="checkin-check" title="已確認到場">✓</span>' : ''}</div>`).join('');
+    const mainBibs = main.map((n,idx)=>`<div class="bib"><span class="bib-num">${String(idx+1).padStart(2,'0')}</span>${getAvatarHtml(n, 20)}${escapeHtml(n)}${ev.checkins && ev.checkins[n] ? '<span class="checkin-check" title="已確認到場">✓</span>' : ''}</div>`).join('');
     const backupChips = backup.map(n=>`<span class="backup-chip">${escapeHtml(n)}</span>`).join('');
 
     wrap.innerHTML = `
@@ -1465,6 +1496,108 @@ document.getElementById('saveAliasBtn').addEventListener('click', async ()=>{
     showStatus('statusMsgAlias', '已儲存，戰績榜會套用新的合併規則。');
   }catch(e){
     showStatus('statusMsgAlias', '儲存失敗，請稍後再試。', true);
+  }
+});
+
+// ---------- player avatars ----------
+// Resizes an uploaded image down to a small square thumbnail and returns it
+// as a base64 data URL, so avatars stay lightweight inside the shared data blob.
+function resizeImageFile(file, maxSize){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        const scale = Math.min(1, maxSize / Math.max(w, h));
+        w = Math.max(1, Math.round(w * scale));
+        h = Math.max(1, Math.round(h * scale));
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = ()=> reject(new Error('image load failed'));
+      img.src = e.target.result;
+    };
+    reader.onerror = ()=> reject(new Error('file read failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Reads an avatar for a given name from the live/synced state — used
+// everywhere avatars are displayed (public, referee, match control).
+function getAvatarHtml(name, size){
+  const url = state.playerAvatars && state.playerAvatars[name];
+  if(!url) return '';
+  return `<img src="${url}" class="player-avatar" style="width:${size}px; height:${size}px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:6px; border:1px solid var(--line);">`;
+}
+
+function renderAvatarAdmin(){
+  editingState.playerAvatars = editingState.playerAvatars || {};
+  const wrap = document.getElementById('avatarListWrap');
+  const entries = Object.entries(editingState.playerAvatars);
+  if(entries.length === 0){
+    wrap.innerHTML = '<p class="empty-note">目前還沒有設定任何頭貼。</p>';
+    return;
+  }
+  wrap.innerHTML = entries.map(([name, dataUrl])=>`
+    <div class="admin-team">
+      <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:0;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <img src="${dataUrl}" style="width:40px; height:40px; border-radius:50%; object-fit:cover; border:1px solid var(--line);">
+          <strong>${escapeHtml(name)}</strong>
+        </div>
+        <button class="btn danger small" data-action="delete-avatar" data-name="${escapeAttr(name)}">刪除</button>
+      </div>
+    </div>
+  `).join('');
+  wrap.querySelectorAll('[data-action="delete-avatar"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      delete editingState.playerAvatars[btn.dataset.name];
+      renderAvatarAdmin();
+    });
+  });
+}
+
+document.getElementById('openAvatarBtn').addEventListener('click', ()=>{
+  renderAvatarAdmin();
+  document.getElementById('adminEventList').classList.add('hidden');
+  document.getElementById('adminAvatarView').classList.remove('hidden');
+});
+document.getElementById('backFromAvatar').addEventListener('click', ()=>{
+  document.getElementById('adminAvatarView').classList.add('hidden');
+  document.getElementById('adminEventList').classList.remove('hidden');
+  renderAdminEventList();
+});
+document.getElementById('addAvatarBtn').addEventListener('click', async ()=>{
+  const nameInput = document.getElementById('avatarNameInput');
+  const fileInput = document.getElementById('avatarFileInput');
+  const errEl = document.getElementById('avatarError');
+  errEl.style.display = 'none';
+  const name = nameInput.value.trim();
+  const file = fileInput.files[0];
+  if(!name){ errEl.textContent = '請輸入暱稱'; errEl.style.display = 'block'; return; }
+  if(!file){ errEl.textContent = '請選擇一張照片'; errEl.style.display = 'block'; return; }
+  try{
+    const dataUrl = await resizeImageFile(file, 160);
+    editingState.playerAvatars = editingState.playerAvatars || {};
+    editingState.playerAvatars[name] = dataUrl;
+    nameInput.value = '';
+    fileInput.value = '';
+    renderAvatarAdmin();
+  }catch(e){
+    errEl.textContent = '圖片處理失敗，請換一張試試。';
+    errEl.style.display = 'block';
+  }
+});
+document.getElementById('saveAvatarBtn').addEventListener('click', async ()=>{
+  try{
+    await persist(editingState);
+    showStatus('statusMsgAvatar', '已儲存，頭貼會套用到對戰畫面。');
+  }catch(e){
+    showStatus('statusMsgAvatar', '儲存失敗，請稍後再試。', true);
   }
 });
 
@@ -2815,9 +2948,9 @@ function refereeMatchRowHtml(a, b, pick, existingScore, roundIdx, matchIdx){
   const scoreLabel = existingScore ? `${existingScore.a} : ${existingScore.b}` : '尚未登記';
   return `
     <div class="referee-match-row${pick ? ' decided' : ''}" data-round="${roundIdx}" data-match="${matchIdx}" data-name-a="${escapeAttr(a)}" data-name-b="${escapeAttr(b)}">
-      <span class="referee-name${pick===a?' winner':''}">${escapeHtml(a)}</span>
+      <span class="referee-name${pick===a?' winner':''}">${getAvatarHtml(a, 22)}${escapeHtml(a)}</span>
       <span class="referee-row-score">${scoreLabel}</span>
-      <span class="referee-name${pick===b?' winner':''}">${escapeHtml(b)}</span>
+      <span class="referee-name${pick===b?' winner':''}">${getAvatarHtml(b, 22)}${escapeHtml(b)}</span>
     </div>
   `;
 }
@@ -2933,9 +3066,11 @@ function openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existingSc
   };
   document.getElementById('refMatchDisplay').classList.add('hidden');
   document.getElementById('matchControlPanel').classList.remove('hidden');
-  document.getElementById('matchControlNameA').textContent = nameA;
-  document.getElementById('matchControlNameB').textContent = nameB;
-  document.getElementById('matchControlError').textContent = '';
+  document.getElementById('matchControlNameA').innerHTML = getAvatarHtml(nameA, 32) + escapeHtml(nameA);
+  document.getElementById('matchControlNameB').innerHTML = getAvatarHtml(nameB, 32) + escapeHtml(nameB);
+  const initialErrEl = document.getElementById('matchControlError');
+  initialErrEl.textContent = '';
+  initialErrEl.style.display = 'none';
   const currentMatchLabel = document.getElementById('refCurrentMatchLabel');
   if(currentMatchLabel) currentMatchLabel.textContent = `🔴 正在登記：${nameA} vs ${nameB}`;
   renderMatchControlScores();
@@ -2962,7 +3097,13 @@ function renderMatchControlScores(){
   document.getElementById('matchControlUndoBtn').disabled = matchControlState.history.length === 0;
   const errEl = document.getElementById('matchControlError');
   const bothZero = matchControlState.scoreA === 0 && matchControlState.scoreB === 0;
-  errEl.textContent = (err && !bothZero) ? `⚠️ ${err}，目前無法送出，可以按「上一步」修正。` : '';
+  if(err && !bothZero){
+    errEl.textContent = `⚠️ ${err}，目前無法送出，可以按「上一步」修正。`;
+    errEl.style.display = 'block';
+  } else {
+    errEl.textContent = '';
+    errEl.style.display = 'none';
+  }
   renderMatchControlLog();
 }
 
@@ -3003,7 +3144,9 @@ async function confirmMatchControl(){
   const threshold = (ev && ev.winThreshold) || 4;
   const err = validateBeybladeScore(scoreA, scoreB, threshold);
   if(err){
-    document.getElementById('matchControlError').textContent = err;
+    const errEl = document.getElementById('matchControlError');
+    errEl.textContent = err;
+    errEl.style.display = 'block';
     return;
   }
   const winner = scoreA > scoreB ? nameA : nameB;
@@ -3015,7 +3158,9 @@ async function confirmMatchControl(){
     closeMatchControl();
     renderRefereeMatchDisplay(ev);
   }catch(e){
-    document.getElementById('matchControlError').textContent = '儲存失敗，請檢查網路後再試一次。';
+    const errEl = document.getElementById('matchControlError');
+    errEl.textContent = '儲存失敗，請檢查網路後再試一次。';
+    errEl.style.display = 'block';
     btn.disabled = false;
   }
 }
@@ -3042,9 +3187,9 @@ async function startCamera(){
     document.getElementById('cameraToggleBtn').textContent = '📷 關閉鏡頭';
     document.getElementById('cameraSwitchBtn').classList.remove('hidden');
     document.getElementById('cameraRecordBtn').classList.remove('hidden');
-    document.getElementById('cameraError').textContent = '';
+    document.getElementById('cameraError').textContent = ''; document.getElementById('cameraError').style.display = 'none';
   }catch(e){
-    document.getElementById('cameraError').textContent = '無法開啟鏡頭，請確認已允許瀏覽器使用攝影機權限。';
+    document.getElementById('cameraError').textContent = '無法開啟鏡頭，請確認已允許瀏覽器使用攝影機權限。'; document.getElementById('cameraError').style.display = 'block';
   }
 }
 
@@ -3082,7 +3227,7 @@ document.getElementById('cameraRecordBtn').addEventListener('click', ()=>{
   try{
     mediaRecorder = new MediaRecorder(cameraStream);
   }catch(e){
-    document.getElementById('cameraError').textContent = '這個瀏覽器不支援錄影功能。';
+    document.getElementById('cameraError').textContent = '這個瀏覽器不支援錄影功能。'; document.getElementById('cameraError').style.display = 'block';
     return;
   }
   mediaRecorder.ondataavailable = e=>{ if(e.data.size > 0) recordedChunks.push(e.data); };
@@ -3760,7 +3905,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
 });
 
 // ---------- navigation ----------
-const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView','adminAliasView'];
+const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView','adminAliasView','adminAvatarView'];
 function hideAllViews(){
   TOP_LEVEL_VIEWS.forEach(id=> document.getElementById(id).classList.add('hidden'));
   document.getElementById('publicFooter').classList.add('hidden');
