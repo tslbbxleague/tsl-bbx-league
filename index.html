@@ -307,17 +307,33 @@
   .referee-match-row .referee-name.winner{ color:var(--lane-gold); font-weight:700; }
   .referee-row-score{ font-family:'Oswald',sans-serif; font-size:13px; color:var(--ink-soft); padding:0 8px; white-space:nowrap; }
 
-  #matchControlPanel{ max-width:520px; }
-  .match-control-camera{ margin:14px 0; }
-  .match-control-camera video{ width:100%; max-height:280px; background:#000; border-radius:6px; object-fit:cover; display:block; }
+  #matchControlPanel{ max-width:560px; }
+  .match-control-stage{
+    position:relative; margin:14px 0; min-height:340px; border-radius:6px; overflow:hidden; background:#000;
+  }
+  .match-control-stage video{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; background:#000;
+  }
   .match-control-camera-controls{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-  .match-control-scoreboard{ display:flex; gap:12px; align-items:stretch; margin-top:8px; }
-  .match-control-side{ flex:1; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:14px; text-align:center; }
-  .match-control-name{ font-size:14px; font-weight:700; margin-bottom:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .match-control-score{ font-family:'Oswald',sans-serif; font-size:42px; font-weight:900; color:var(--lane-gold); margin-bottom:12px; }
-  .match-control-btns{ display:flex; flex-direction:column; gap:6px; }
-  .match-control-btns button{ width:100%; }
-  .match-control-vs{ display:flex; align-items:center; font-family:'Oswald',sans-serif; color:var(--ink-soft); font-size:12px; }
+  .match-control-scoreboard{
+    position:relative; z-index:2; display:flex; min-height:340px; height:100%;
+  }
+  .match-control-side{
+    flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;
+    background:var(--panel); border:1px solid var(--line); padding:14px; text-align:center;
+    transition:background .2s ease;
+  }
+  /* Once the camera is actually running, the side panels become translucent
+     so the battle underneath stays visible through the score controls —
+     everything fits in one screen instead of stacking camera above scoring. */
+  .match-control-stage.camera-active .match-control-side{
+    background:rgba(10,10,13,0.42); backdrop-filter:blur(1.5px); border-color:rgba(240,193,67,0.25);
+  }
+  .match-control-name{ font-size:14px; font-weight:700; margin-bottom:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-shadow:0 1px 3px rgba(0,0,0,0.6); }
+  .match-control-score{ font-family:'Oswald',sans-serif; font-size:42px; font-weight:900; color:var(--lane-gold); margin-bottom:12px; text-shadow:0 1px 4px rgba(0,0,0,0.7); }
+  .match-control-btns{ display:flex; flex-direction:column; gap:6px; width:100%; }
+  .match-control-btns button{ width:100%; opacity:0.94; }
+  .match-control-vs{ display:flex; align-items:center; font-family:'Oswald',sans-serif; color:var(--ink-soft); font-size:12px; text-shadow:0 1px 3px rgba(0,0,0,0.6); }
 
   .match-control-log-row{
     display:flex; align-items:center; gap:10px; padding:8px 10px; background:var(--panel);
@@ -328,13 +344,9 @@
   .match-control-log-pts{ font-family:'Oswald',sans-serif; color:var(--lane-gold); font-weight:700; min-width:44px; text-align:right; }
 
   @media (orientation: landscape){
-    #matchControlPanel{ max-width:none; display:flex; flex-wrap:wrap; align-items:flex-start; gap:16px; }
-    #matchControlBackBtn{ flex-basis:100%; }
-    .match-control-camera{ flex:1; min-width:240px; margin:0; }
-    .match-control-scoreboard{ flex:1; min-width:260px; margin:0; }
-    #matchControlError{ flex-basis:100%; }
-    #matchControlPanel > div{ flex-basis:100%; }
-    .match-control-camera, .match-control-scoreboard{ flex-basis:auto; }
+    #matchControlPanel{ max-width:none; }
+    .match-control-stage{ min-height:260px; }
+    .match-control-scoreboard{ min-height:260px; }
   }
 </style>
 </head>
@@ -478,7 +490,7 @@
     <p id="refPwError" style="color:var(--danger);font-size:12.5px;margin:-6px 0 12px;min-height:16px;"></p>
     <button class="btn" style="width:100%" id="refPwSubmit">登入</button>
     <p style="color:var(--ink-soft);font-size:11.5px;margin-top:14px;">
-      如忘記密碼，請於程式碼中的 REFEREE_PASSWORD 修改。
+      共有 6 組裁判密碼（裁判 01～06），登入後系統會自動記住你是第幾號裁判。如忘記密碼，請於程式碼中的 REFEREE_ACCOUNTS 修改。
     </p>
     <button class="btn secondary" style="width:100%;margin-top:6px" id="backFromRefGate">返回公開頁面</button>
   </div>
@@ -488,6 +500,7 @@
 <div class="admin-wrap hidden" id="refereeEventList">
   <div class="admin-toolbar">
     <button class="btn secondary" id="backFromRefEvents">← 返回公開頁面</button>
+    <span class="type-chip" id="refereeIdBadge" style="cursor:default;"></span>
   </div>
   <p class="empty-note" style="margin-bottom:14px;">只列出已經「開始比賽」的賽事，選一場開始登錄比分。</p>
   <div id="refereeEventListWrap"></div>
@@ -497,46 +510,56 @@
 <div class="admin-wrap hidden" id="refereeMatchEntryView">
   <div class="admin-toolbar">
     <button class="btn secondary" id="backFromRefMatchEntry">← 返回賽事列表</button>
-    <span class="status-msg" id="refStatusMsg"></span>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span class="type-chip" id="refereeIdBadge2" style="cursor:default;"></span>
+      <span class="status-msg" id="refStatusMsg"></span>
+    </div>
   </div>
   <div class="event-title-block">
     <h2 id="refMatchEventName" style="font-size:18px;"></h2>
+    <p class="empty-note" id="refCurrentMatchLabel" style="margin-top:4px;"></p>
   </div>
   <div id="refMatchDisplay" style="margin-top:12px;"></div>
 
   <div id="matchControlPanel" class="hidden">
     <button class="btn secondary small" id="matchControlBackBtn">← 返回對戰列表</button>
 
-    <div class="match-control-camera">
+    <div class="match-control-stage" id="matchControlStage">
       <video id="matchControlVideo" autoplay playsinline muted></video>
-      <div class="match-control-camera-controls">
-        <button class="btn secondary small" id="cameraToggleBtn">📷 開啟鏡頭</button>
-        <button class="btn secondary small hidden" id="cameraSwitchBtn">🔄 切換鏡頭</button>
-        <button class="btn danger small hidden" id="cameraRecordBtn">⏺️ 開始錄影</button>
-        <a class="btn gold small hidden" id="cameraDownloadLink" download="match-recording.webm">⬇️ 下載影片</a>
+      <div class="match-control-scoreboard">
+        <div class="match-control-side">
+          <div class="match-control-name" id="matchControlNameA"></div>
+          <div class="match-control-score" id="matchControlScoreA">0</div>
+          <div class="match-control-btns">
+            <button class="btn small" data-side="a" data-pts="1">轉停 +1</button>
+            <button class="btn small" data-side="a" data-pts="2">爆裂/擊飛 +2</button>
+            <button class="btn small" data-side="a" data-pts="3">極限 +3</button>
+          </div>
+        </div>
+        <div class="match-control-vs">VS</div>
+        <div class="match-control-side">
+          <div class="match-control-name" id="matchControlNameB"></div>
+          <div class="match-control-score" id="matchControlScoreB">0</div>
+          <div class="match-control-btns">
+            <button class="btn small" data-side="b" data-pts="1">轉停 +1</button>
+            <button class="btn small" data-side="b" data-pts="2">爆裂/擊飛 +2</button>
+            <button class="btn small" data-side="b" data-pts="3">極限 +3</button>
+          </div>
+        </div>
       </div>
     </div>
+    <div class="match-control-camera-controls">
+      <button class="btn secondary small" id="cameraToggleBtn">📷 開啟鏡頭</button>
+      <button class="btn secondary small hidden" id="cameraSwitchBtn">🔄 切換鏡頭</button>
+      <button class="btn danger small hidden" id="cameraRecordBtn">⏺️ 開始錄影</button>
+      <a class="btn gold small hidden" id="cameraDownloadLink" download="match-recording.webm">⬇️ 下載影片</a>
+    </div>
+    <p class="referee-error" id="cameraError"></p>
 
-    <div class="match-control-scoreboard">
-      <div class="match-control-side">
-        <div class="match-control-name" id="matchControlNameA"></div>
-        <div class="match-control-score" id="matchControlScoreA">0</div>
-        <div class="match-control-btns">
-          <button class="btn small" data-side="a" data-pts="1">轉停 +1</button>
-          <button class="btn small" data-side="a" data-pts="2">爆裂/擊飛 +2</button>
-          <button class="btn small" data-side="a" data-pts="3">極限 +3</button>
-        </div>
-      </div>
-      <div class="match-control-vs">VS</div>
-      <div class="match-control-side">
-        <div class="match-control-name" id="matchControlNameB"></div>
-        <div class="match-control-score" id="matchControlScoreB">0</div>
-        <div class="match-control-btns">
-          <button class="btn small" data-side="b" data-pts="1">轉停 +1</button>
-          <button class="btn small" data-side="b" data-pts="2">爆裂/擊飛 +2</button>
-          <button class="btn small" data-side="b" data-pts="3">極限 +3</button>
-        </div>
-      </div>
+    <div id="matchControlThresholdPrompt" class="shuffle-confirm hidden">
+      <p id="matchControlThresholdText" style="margin:0 0 10px;"></p>
+      <button class="btn gold small" id="matchControlContinueBtn">繼續登錄分數</button>
+      <button class="btn secondary small" id="matchControlFinishBtn">登錄完成</button>
     </div>
 
     <p class="referee-error" id="matchControlError"></p>
@@ -744,6 +767,10 @@
         <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px;">
           <input type="checkbox" id="onlyCheckedInInput"> 只把「已點名到場」的人排進賽程（未點名的人會被排除，不用手動刪除名單）
         </label>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+          <label for="winThresholdInput" style="font-size:13px; color:var(--ink-soft);">獲勝門檻（幾分獲勝，4～10 分）</label>
+          <input type="number" id="winThresholdInput" min="4" max="10" value="4" style="width:70px; padding:6px 8px; border:1px solid var(--line); border-radius:3px; background:var(--paper); color:var(--ink); font-size:13px;">
+        </div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn gold small" id="autoShuffleBtn">🔀 隨機分配</button>
           <button class="btn secondary small" id="openManualAssignBtn">✋ 手動分配</button>
@@ -787,7 +814,16 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 const ADMIN_PASSWORD = "tsl520";
-const REFEREE_PASSWORD = "tsl888";
+// Six separate referee logins so each ref has their own identity — swap
+// these for real passwords before the event.
+const REFEREE_ACCOUNTS = {
+  '01': 'tsl801',
+  '02': 'tsl802',
+  '03': 'tsl803',
+  '04': 'tsl804',
+  '05': 'tsl805',
+  '06': 'tsl806'
+};
 const STORAGE_KEY = "bbx-roster-data-v2";
 
 const SUPABASE_URL = "https://teymozsbdsmxnxziizoy.supabase.co";
@@ -804,6 +840,7 @@ let activeAdminEventTab = 'ongoing';
 let currentAdminEventId = null;
 let refereeState = null;
 let currentRefereeEventId = null;
+let currentRefereeId = null;
 let currentEditorMode = 'full';
 
 // ---------- storage (Supabase) ----------
@@ -890,7 +927,7 @@ function seedData(){
         id: cryptoId(), name:"個人賽", date:"2026-07-17", type:"individual",
         individualMain:["王小明","陳曉華","林志豪","黃美玲"],
         individualBackup:["張家豪","李佳穎"],
-        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, lottery:{poolMode:'all', excludeWinners:true, winners:[]}
+        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, lottery:{poolMode:'all', excludeWinners:true, winners:[]}, winThreshold:4
       },
       {
         id: cryptoId(), name:"王牌團體賽", date:"2026-07-24", type:"team",
@@ -902,7 +939,7 @@ function seedData(){
         backupTeams:[
           { id: cryptoId(), name:"C隊", members:["張惠妹","周杰倫"] }
         ],
-        started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, lottery:{poolMode:'all', excludeWinners:true, winners:[]}
+        started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, lottery:{poolMode:'all', excludeWinners:true, winners:[]}, winThreshold:4
       }
     ]
   };
@@ -2743,12 +2780,13 @@ function renderDoubleElim(ev, containerEl, interactive){
 // Beyblade X scoring: first to 4+ points wins a match. A single exchange can
 // award 1, 2, or 3 points, so the final score always has the winner at
 // 4, 5, or 6, and the loser somewhere from 0 to 3.
-function validateBeybladeScore(scoreA, scoreB){
+function validateBeybladeScore(scoreA, scoreB, threshold){
+  threshold = threshold || 4;
   if(Number.isNaN(scoreA) || Number.isNaN(scoreB)) return '請輸入兩邊的比分';
   if(scoreA === scoreB) return '比分不能相同，一定要分出勝負';
   const winner = Math.max(scoreA, scoreB), loser = Math.min(scoreA, scoreB);
-  if(winner < 4 || winner > 6) return '獲勝方分數需介於 4～6 分';
-  if(loser < 0 || loser > 3) return '落敗方分數需介於 0～3 分';
+  if(winner < threshold || winner > threshold + 2) return `獲勝方分數需介於 ${threshold}～${threshold+2} 分`;
+  if(loser < 0 || loser > threshold - 1) return `落敗方分數需介於 0～${threshold-1} 分`;
   return null;
 }
 
@@ -2794,54 +2832,54 @@ function getExistingScore(ev, kind, roundVal, matchVal){
 
 // Applies a decided score to the right spot in the event's data, covering
 // every tournament format's own storage shape.
-function applyScoreByKind(freshEv, kind, roundVal, matchVal, scoreA, scoreB, winner){
+function applyScoreByKind(freshEv, kind, roundVal, matchVal, scoreA, scoreB, winner, refereeId){
   if(kind === 'bracket'){
     if(roundVal === '3rd'){
       freshEv.bracket.picks = freshEv.bracket.picks || {};
       freshEv.bracket.scores = freshEv.bracket.scores || {};
       freshEv.bracket.picks['3rd'] = winner;
-      freshEv.bracket.scores['3rd'] = { a:scoreA, b:scoreB };
+      freshEv.bracket.scores['3rd'] = { a:scoreA, b:scoreB, ref:refereeId };
     } else if(roundVal === 'rr'){
       freshEv.bracket.roundRobinPicks = freshEv.bracket.roundRobinPicks || {};
       freshEv.bracket.roundRobinScores = freshEv.bracket.roundRobinScores || {};
       freshEv.bracket.roundRobinPicks[matchVal] = winner;
-      freshEv.bracket.roundRobinScores[matchVal] = { a:scoreA, b:scoreB };
+      freshEv.bracket.roundRobinScores[matchVal] = { a:scoreA, b:scoreB, ref:refereeId };
     } else {
       const r = parseInt(roundVal, 10), m = parseInt(matchVal, 10);
       freshEv.bracket.scores = freshEv.bracket.scores || {};
-      freshEv.bracket.scores[`${r}-${m}`] = { a:scoreA, b:scoreB };
+      freshEv.bracket.scores[`${r}-${m}`] = { a:scoreA, b:scoreB, ref:refereeId };
       setBracketPick(freshEv, r, m, winner);
     }
   } else if(kind === 'swiss'){
     const ri = parseInt(roundVal, 10), mi = parseInt(matchVal, 10);
     const m = freshEv.swiss.rounds[ri][mi];
-    m.scoreA = scoreA; m.scoreB = scoreB; m.winner = winner;
+    m.scoreA = scoreA; m.scoreB = scoreB; m.winner = winner; m.ref = refereeId;
   } else if(kind === 'group'){
     const gi = parseInt(roundVal, 10), mi = parseInt(matchVal, 10);
     freshEv.group.scores = freshEv.group.scores || {};
-    freshEv.group.scores[`${gi}-${mi}`] = { a:scoreA, b:scoreB };
+    freshEv.group.scores[`${gi}-${mi}`] = { a:scoreA, b:scoreB, ref:refereeId };
     setGroupPick(freshEv, gi, mi, winner);
   } else if(kind === 'doubleElim'){
     const de2 = freshEv.doubleElim;
     if(roundVal.startsWith('wb-')){
       const r = parseInt(roundVal.slice(3), 10), m = parseInt(matchVal, 10);
       de2.wb.scores = de2.wb.scores || {};
-      de2.wb.scores[`${r}-${m}`] = { a:scoreA, b:scoreB };
+      de2.wb.scores[`${r}-${m}`] = { a:scoreA, b:scoreB, ref:refereeId };
       setWbPick(de2, r, m, winner);
     } else if(roundVal.startsWith('lb-')){
       const lr = parseInt(roundVal.slice(3), 10), m = parseInt(matchVal, 10);
       de2.lb.scores = de2.lb.scores || {};
-      de2.lb.scores[`${lr}-${m}`] = { a:scoreA, b:scoreB };
+      de2.lb.scores[`${lr}-${m}`] = { a:scoreA, b:scoreB, ref:refereeId };
       setLbPick(de2, lr, m, winner);
     } else if(roundVal === 'gf'){
       const prevGf = de2.grandFinal.picks['0'];
       de2.grandFinal.scores = de2.grandFinal.scores || {};
-      de2.grandFinal.scores['0'] = { a:scoreA, b:scoreB };
+      de2.grandFinal.scores['0'] = { a:scoreA, b:scoreB, ref:refereeId };
       de2.grandFinal.picks['0'] = winner;
       if(prevGf !== winner){ de2.reset.picks = {}; de2.reset.scores = {}; }
     } else if(roundVal === 'reset'){
       de2.reset.scores = de2.reset.scores || {};
-      de2.reset.scores['0'] = { a:scoreA, b:scoreB };
+      de2.reset.scores['0'] = { a:scoreA, b:scoreB, ref:refereeId };
       de2.reset.picks['0'] = winner;
     }
   }
@@ -2870,13 +2908,18 @@ function openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existingSc
     ev, kind, roundVal, matchVal, nameA, nameB,
     scoreA: existingScore ? existingScore.a : 0,
     scoreB: existingScore ? existingScore.b : 0,
-    history: []
+    history: [],
+    thresholdHandled: false
   };
   document.getElementById('refMatchDisplay').classList.add('hidden');
   document.getElementById('matchControlPanel').classList.remove('hidden');
   document.getElementById('matchControlNameA').textContent = nameA;
   document.getElementById('matchControlNameB').textContent = nameB;
   document.getElementById('matchControlError').textContent = '';
+  document.getElementById('matchControlThresholdPrompt').classList.add('hidden');
+  const currentMatchLabel = document.getElementById('refCurrentMatchLabel');
+  if(currentMatchLabel) currentMatchLabel.textContent = `🔴 正在登記：${nameA} vs ${nameB}`;
+  setMatchControlButtonsDisabled(false);
   renderMatchControlScores();
 }
 
@@ -2885,15 +2928,21 @@ function closeMatchControl(){
   stopCamera();
   document.getElementById('matchControlPanel').classList.add('hidden');
   document.getElementById('refMatchDisplay').classList.remove('hidden');
+  const currentMatchLabel = document.getElementById('refCurrentMatchLabel');
+  if(currentMatchLabel) currentMatchLabel.textContent = '請從下面的對戰列表中，點選要登記比分的對戰。';
 }
 
 function renderMatchControlScores(){
   if(!matchControlState) return;
   document.getElementById('matchControlScoreA').textContent = matchControlState.scoreA;
   document.getElementById('matchControlScoreB').textContent = matchControlState.scoreB;
-  const err = validateBeybladeScore(matchControlState.scoreA, matchControlState.scoreB);
+  const threshold = (matchControlState.ev && matchControlState.ev.winThreshold) || 4;
+  const err = validateBeybladeScore(matchControlState.scoreA, matchControlState.scoreB, threshold);
   document.getElementById('matchControlConfirmBtn').disabled = !!err;
   document.getElementById('matchControlUndoBtn').disabled = matchControlState.history.length === 0;
+  const errEl = document.getElementById('matchControlError');
+  const bothZero = matchControlState.scoreA === 0 && matchControlState.scoreB === 0;
+  errEl.textContent = (err && !bothZero) ? `⚠️ ${err}，目前無法送出，可以按「上一步」修正。` : '';
   renderMatchControlLog();
 }
 
@@ -2913,12 +2962,30 @@ function renderMatchControlLog(){
   }).join('');
 }
 
+function setMatchControlButtonsDisabled(disabled){
+  document.querySelectorAll('#matchControlPanel .match-control-btns button').forEach(b=> b.disabled = disabled);
+}
+
+function maybeShowThresholdPrompt(){
+  if(!matchControlState || matchControlState.thresholdHandled) return;
+  const { ev, scoreA, scoreB, nameA, nameB } = matchControlState;
+  const threshold = (ev && ev.winThreshold) || 4;
+  const maxScore = Math.max(scoreA, scoreB);
+  if(maxScore >= threshold){
+    const winnerName = scoreA > scoreB ? nameA : nameB;
+    document.getElementById('matchControlThresholdText').textContent = `${winnerName} 已經到達 ${maxScore} 分（獲勝門檻為 ${threshold} 分），是否要繼續登錄分數？`;
+    document.getElementById('matchControlThresholdPrompt').classList.remove('hidden');
+    setMatchControlButtonsDisabled(true);
+    document.getElementById('matchControlConfirmBtn').disabled = true;
+  }
+}
+
 function addMatchControlPoint(side, pts){
   if(!matchControlState) return;
   matchControlState.history.push({ side, pts });
   if(side === 'a') matchControlState.scoreA += pts; else matchControlState.scoreB += pts;
-  document.getElementById('matchControlError').textContent = '';
   renderMatchControlScores();
+  maybeShowThresholdPrompt();
 }
 
 function undoMatchControlPoint(){
@@ -2926,13 +2993,21 @@ function undoMatchControlPoint(){
   const last = matchControlState.history.pop();
   if(!last) return;
   if(last.side === 'a') matchControlState.scoreA -= last.pts; else matchControlState.scoreB -= last.pts;
+  const threshold = (matchControlState.ev && matchControlState.ev.winThreshold) || 4;
+  const maxScore = Math.max(matchControlState.scoreA, matchControlState.scoreB);
+  if(maxScore < threshold){
+    matchControlState.thresholdHandled = false;
+    setMatchControlButtonsDisabled(false);
+  }
+  document.getElementById('matchControlThresholdPrompt').classList.add('hidden');
   renderMatchControlScores();
 }
 
 async function confirmMatchControl(){
   if(!matchControlState) return;
   const { ev, kind, roundVal, matchVal, nameA, nameB, scoreA, scoreB } = matchControlState;
-  const err = validateBeybladeScore(scoreA, scoreB);
+  const threshold = (ev && ev.winThreshold) || 4;
+  const err = validateBeybladeScore(scoreA, scoreB, threshold);
   if(err){
     document.getElementById('matchControlError').textContent = err;
     return;
@@ -2941,8 +3016,8 @@ async function confirmMatchControl(){
   const btn = document.getElementById('matchControlConfirmBtn');
   btn.disabled = true;
   try{
-    await applyRefereeMatchUpdate(ev, freshEv=> applyScoreByKind(freshEv, kind, roundVal, matchVal, scoreA, scoreB, winner));
-    showStatus('refStatusMsg', '已儲存比分。');
+    await applyRefereeMatchUpdate(ev, freshEv=> applyScoreByKind(freshEv, kind, roundVal, matchVal, scoreA, scoreB, winner, currentRefereeId));
+    showStatus('refStatusMsg', `已儲存比分（裁判 ${currentRefereeId || '--'}）。`);
     closeMatchControl();
     renderRefereeMatchDisplay(ev);
   }catch(e){
@@ -2955,6 +3030,20 @@ document.querySelectorAll('#matchControlPanel .match-control-btns button').forEa
   btn.addEventListener('click', ()=> addMatchControlPoint(btn.dataset.side, parseInt(btn.dataset.pts, 10)));
 });
 document.getElementById('matchControlUndoBtn').addEventListener('click', undoMatchControlPoint);
+document.getElementById('matchControlContinueBtn').addEventListener('click', ()=>{
+  if(!matchControlState) return;
+  matchControlState.thresholdHandled = true;
+  document.getElementById('matchControlThresholdPrompt').classList.add('hidden');
+  setMatchControlButtonsDisabled(false);
+  renderMatchControlScores();
+});
+document.getElementById('matchControlFinishBtn').addEventListener('click', ()=>{
+  if(!matchControlState) return;
+  matchControlState.thresholdHandled = true;
+  document.getElementById('matchControlThresholdPrompt').classList.add('hidden');
+  // point buttons stay disabled — the match is considered decided, ready to confirm
+  renderMatchControlScores();
+});
 document.getElementById('matchControlConfirmBtn').addEventListener('click', confirmMatchControl);
 document.getElementById('matchControlBackBtn').addEventListener('click', closeMatchControl);
 
@@ -2969,11 +3058,13 @@ async function startCamera(){
     if(cameraStream) cameraStream.getTracks().forEach(t=>t.stop());
     cameraStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: cameraFacingMode }, audio:true });
     document.getElementById('matchControlVideo').srcObject = cameraStream;
+    document.getElementById('matchControlStage').classList.add('camera-active');
     document.getElementById('cameraToggleBtn').textContent = '📷 關閉鏡頭';
     document.getElementById('cameraSwitchBtn').classList.remove('hidden');
     document.getElementById('cameraRecordBtn').classList.remove('hidden');
+    document.getElementById('cameraError').textContent = '';
   }catch(e){
-    alert('無法開啟鏡頭，請確認已允許瀏覽器使用攝影機權限。');
+    document.getElementById('cameraError').textContent = '無法開啟鏡頭，請確認已允許瀏覽器使用攝影機權限。';
   }
 }
 
@@ -2982,6 +3073,8 @@ function stopCamera(){
   if(cameraStream){ cameraStream.getTracks().forEach(t=>t.stop()); cameraStream = null; }
   const video = document.getElementById('matchControlVideo');
   if(video) video.srcObject = null;
+  const stage = document.getElementById('matchControlStage');
+  if(stage) stage.classList.remove('camera-active');
   const toggleBtn = document.getElementById('cameraToggleBtn');
   if(toggleBtn) toggleBtn.textContent = '📷 開啟鏡頭';
   const switchBtn = document.getElementById('cameraSwitchBtn');
@@ -3009,7 +3102,7 @@ document.getElementById('cameraRecordBtn').addEventListener('click', ()=>{
   try{
     mediaRecorder = new MediaRecorder(cameraStream);
   }catch(e){
-    alert('這個瀏覽器不支援錄影功能。');
+    document.getElementById('cameraError').textContent = '這個瀏覽器不支援錄影功能。';
     return;
   }
   mediaRecorder.ondataavailable = e=>{ if(e.data.size > 0) recordedChunks.push(e.data); };
@@ -3033,7 +3126,8 @@ function renderRefereeGroup(ev, containerEl){
     return;
   }
   group.scores = group.scores || {};
-  let html = '<p class="referee-hint">獲勝方 4～6 分，落敗方 0～3 分。輸入比分後按確認即可自動計入該組勝場。</p>';
+  const _wt = ev.winThreshold || 4;
+  let html = `<p class="referee-hint">獲勝方 ${_wt}～${_wt+2} 分，落敗方 0～${_wt-1} 分。輸入比分後按確認即可自動計入該組勝場。</p>`;
   group.groups.forEach((g, gi)=>{
     const pairs = groupPairs(g.length);
     html += `<div class="admin-subsection"><div class="sub-head"><h4>第 ${gi+1} 組</h4></div>`;
@@ -3068,7 +3162,8 @@ function renderRefereeDoubleElim(ev, containerEl){
   }
   de.wb.scores = de.wb.scores || {};
   de.lb.scores = de.lb.scores || {};
-  let html = '<p class="referee-hint">獲勝方 4～6 分，落敗方 0～3 分。輸家第一次會掉到敗部，敗部再輸一場就淘汰。</p>';
+  const _wt = ev.winThreshold || 4;
+  let html = `<p class="referee-hint">獲勝方 ${_wt}～${_wt+2} 分，落敗方 0～${_wt-1} 分。輸家第一次會掉到敗部，敗部再輸一場就淘汰。</p>`;
 
   const k = wbRounds(de);
   html += '<div class="admin-subsection"><div class="sub-head"><h4>勝部</h4></div>';
@@ -3132,7 +3227,8 @@ function renderRefereeBracket(ev, containerEl){
   bracket.scores = bracket.scores || {};
   bracket.roundRobinScores = bracket.roundRobinScores || {};
   const rounds = totalRounds(bracket);
-  let html = '<p class="referee-hint">獲勝方 4～6 分，落敗方 0～3 分。輸入比分後按確認即可自動晉級。</p>';
+  const _wt = ev.winThreshold || 4;
+  let html = `<p class="referee-hint">獲勝方 ${_wt}～${_wt+2} 分，落敗方 0～${_wt-1} 分。輸入比分後按確認即可自動晉級。</p>`;
   html += '<div class="bracket-wrap">';
   for(let r=0;r<rounds;r++){
     const entrants = getRoundEntrants(bracket, r);
@@ -3248,6 +3344,22 @@ function generateNextSwissRound(ev){
   swiss.rounds.push(matches);
 }
 
+// Groups players by their current win/loss record (e.g. "1 勝 0 敗"), so
+// after round 1 it's immediately clear who's in the 1-0 group vs the 0-1
+// group, instead of only seeing a flat sorted list.
+function groupSwissStandings(swiss){
+  const standings = computeSwissStandings(swiss);
+  const roundsPlayed = swiss.rounds.length;
+  const groups = {};
+  standings.forEach(s=>{
+    const losses = Math.max(roundsPlayed - s.score, 0);
+    const key = `${s.score}-${losses}`;
+    if(!groups[key]) groups[key] = { wins:s.score, losses, names:[] };
+    groups[key].names.push(s.name);
+  });
+  return Object.values(groups).sort((a,b)=> b.wins - a.wins || a.losses - b.losses);
+}
+
 function renderSwiss(ev, containerEl, interactive){
   const swiss = ev.swiss;
   if(!containerEl) return;
@@ -3276,6 +3388,15 @@ function renderSwiss(ev, containerEl, interactive){
     });
     html += `</div>`;
   });
+  const groups = groupSwissStandings(swiss);
+  html += `<div class="admin-subsection"><div class="sub-head"><h4>目前戰績分組</h4></div>`;
+  groups.forEach(g=>{
+    html += `<div style="margin-bottom:10px; max-width:320px;">
+      <p style="font-family:'Oswald',sans-serif; font-size:12px; letter-spacing:1px; color:var(--lane-gold); margin:0 0 4px;">${g.wins} 勝 ${g.losses} 敗（${g.names.length} 人）</p>
+      <p style="font-size:12.5px; color:var(--ink-soft); margin:0;">${g.names.map(escapeHtml).join('、')}</p>
+    </div>`;
+  });
+  html += `</div>`;
   const standings = computeSwissStandings(swiss);
   html += `<div class="admin-subsection"><div class="sub-head"><h4>積分榜</h4></div>`;
   standings.forEach((s,i)=>{
@@ -3302,7 +3423,8 @@ function renderRefereeSwiss(ev, containerEl){
     containerEl.innerHTML = '<p class="empty-note">尚未產生賽程</p>';
     return;
   }
-  let html = '<p class="referee-hint">獲勝方 4～6 分，落敗方 0～3 分。輸入比分後按確認即可記錄勝負。</p>';
+  const _wt = ev.winThreshold || 4;
+  let html = `<p class="referee-hint">獲勝方 ${_wt}～${_wt+2} 分，落敗方 0～${_wt-1} 分。輸入比分後按確認即可記錄勝負。</p>`;
   swiss.rounds.forEach((round, ri)=>{
     html += `<div class="admin-subsection"><div class="sub-head"><h4>第 ${ri+1} 輪</h4></div>`;
     round.forEach((m, mi)=>{
@@ -3314,15 +3436,47 @@ function renderRefereeSwiss(ev, containerEl){
     });
     html += `</div>`;
   });
+  const groups = groupSwissStandings(swiss);
+  html += `<div class="admin-subsection"><div class="sub-head"><h4>目前戰績分組</h4></div>`;
+  groups.forEach(g=>{
+    html += `<div style="margin-bottom:10px; max-width:320px;">
+      <p style="font-family:'Oswald',sans-serif; font-size:12px; letter-spacing:1px; color:var(--lane-gold); margin:0 0 4px;">${g.wins} 勝 ${g.losses} 敗（${g.names.length} 人）</p>
+      <p style="font-size:12.5px; color:var(--ink-soft); margin:0;">${g.names.map(escapeHtml).join('、')}</p>
+    </div>`;
+  });
+  html += `</div>`;
   const standings = computeSwissStandings(swiss);
   html += `<div class="admin-subsection"><div class="sub-head"><h4>積分榜</h4></div>`;
   standings.forEach((s,i)=>{
     html += `<div style="display:flex;justify-content:space-between;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px;max-width:320px;"><span>${i+1}. ${escapeHtml(s.name)}</span><span style="color:var(--lane-gold);font-weight:700;">${s.score} 勝</span></div>`;
   });
   html += `</div>`;
+
+  const lastRound = swiss.rounds[swiss.rounds.length - 1];
+  const currentRoundDone = lastRound.every(m=> !!m.winner);
+  const moreRoundsLeft = swiss.rounds.length < swiss.totalRounds;
+  if(currentRoundDone && moreRoundsLeft){
+    html += `<button class="btn gold small" id="refNextSwissRoundBtn" style="margin-top:8px;">➡️ 產生下一輪對戰</button>`;
+  }
+
   containerEl.innerHTML = html;
 
   wireMatchRowClicks(containerEl, ev, 'swiss');
+
+  const nextBtn = containerEl.querySelector('#refNextSwissRoundBtn');
+  if(nextBtn){
+    nextBtn.addEventListener('click', async ()=>{
+      nextBtn.disabled = true;
+      try{
+        await applyRefereeMatchUpdate(ev, freshEv=> generateNextSwissRound(freshEv));
+        showStatus('refStatusMsg', '已產生下一輪對戰。');
+        renderRefereeSwiss(ev, containerEl);
+      }catch(e){
+        showStatus('refStatusMsg', '產生失敗，請檢查網路後再試一次。', true);
+        nextBtn.disabled = false;
+      }
+    });
+  }
 }
 
 function updateNextRoundButtonState(ev){
@@ -3388,6 +3542,7 @@ function renderBracketAdminSection(ev){
       r.checked = String(activeSize) === r.value;
     });
     document.getElementById('swissSizeInput').value = ev.swiss ? ev.swiss.size : '';
+    document.getElementById('winThresholdInput').value = ev.winThreshold || 4;
     const activeFormat = ev.format || 'elimination';
     document.querySelectorAll('input[name="tourFormat"]').forEach(r=>{
       r.checked = activeFormat === r.value;
@@ -3480,6 +3635,8 @@ document.getElementById('confirmShuffleBtn').addEventListener('click', ()=>{
   const format = getSelectedFormat();
   const size = getSelectedSize(format);
   syncEntrantSourceFromDOM(ev);
+  const thresholdInput = parseInt(document.getElementById('winThresholdInput').value, 10);
+  ev.winThreshold = (thresholdInput >= 4 && thresholdInput <= 10) ? thresholdInput : 4;
   if(format === 'swiss'){ generateSwiss(ev, size); }
   else if(format === 'group'){ generateGroupStage(ev, size); }
   else if(format === 'doubleElim'){ generateDoubleElim(ev, size); }
@@ -3541,6 +3698,8 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
   if(!ev) return;
   const format = getSelectedFormat();
   const size = getSelectedSize(format);
+  const thresholdInput = parseInt(document.getElementById('winThresholdInput').value, 10);
+  ev.winThreshold = (thresholdInput >= 4 && thresholdInput <= 10) ? thresholdInput : 4;
   const capacity = resolvedCapacity(ev, format, size);
   const slots = new Array(capacity).fill(null);
   document.querySelectorAll('#manualSlotsGrid select').forEach(sel=>{
@@ -3638,6 +3797,7 @@ function showRefereeEvents(){
   refereeState = JSON.parse(JSON.stringify(state));
   hideAllViews();
   document.getElementById('refereeEventList').classList.remove('hidden');
+  document.getElementById('refereeIdBadge').textContent = `裁判 ${currentRefereeId || '--'}`;
   renderRefereeEventList();
 }
 
@@ -3671,6 +3831,8 @@ function openRefereeMatchEntry(id){
   const ev = refereeState.events.find(e=>e.id===id);
   if(!ev) return;
   document.getElementById('refMatchEventName').textContent = ev.name + (ev.date ? "　" + fmtDate(ev.date) : "");
+  document.getElementById('refereeIdBadge2').textContent = `裁判 ${currentRefereeId || '--'}`;
+  document.getElementById('refCurrentMatchLabel').textContent = '請從下面的對戰列表中，點選要登記比分的對戰。';
   hideAllViews();
   document.getElementById('refereeMatchEntryView').classList.remove('hidden');
   renderRefereeMatchDisplay(ev);
@@ -3842,8 +4004,13 @@ document.getElementById('pwSubmit').addEventListener('click', ()=>{
 });
 document.getElementById('refPwSubmit').addEventListener('click', ()=>{
   const val = document.getElementById('refPwInput').value;
-  if(val === REFEREE_PASSWORD){ showRefereeEvents(); }
-  else{ document.getElementById('refPwError').textContent = '密碼錯誤，請再試一次。'; }
+  const matchedId = Object.keys(REFEREE_ACCOUNTS).find(id=> REFEREE_ACCOUNTS[id] === val);
+  if(matchedId){
+    currentRefereeId = matchedId;
+    showRefereeEvents();
+  } else {
+    document.getElementById('refPwError').textContent = '密碼錯誤，請再試一次。';
+  }
 });
 document.getElementById('refPwInput').addEventListener('keydown', e=>{
   if(e.key==='Enter') document.getElementById('refPwSubmit').click();
@@ -3856,7 +4023,7 @@ document.getElementById('addEventBtn').addEventListener('click', ()=>{
   editingState.events.push({
     id: cryptoId(), name:"新賽事", date:"", type:"individual",
     individualMain:[], individualBackup:[], mainTeams:[], backupTeams:[],
-    started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, lottery:{poolMode:'all', excludeWinners:true, winners:[]}
+    started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, lottery:{poolMode:'all', excludeWinners:true, winners:[]}, winThreshold:4
   });
   renderAdminEventList();
 });
