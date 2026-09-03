@@ -41,6 +41,28 @@
   }
   .num{font-family:'Oswald',sans-serif;}
 
+  #bottomNav{
+    position:fixed; bottom:0; left:0; right:0; z-index:60;
+    display:flex; background:#0F0D08; border-top:1px solid rgba(240,193,67,0.25);
+    box-shadow:0 -4px 16px rgba(0,0,0,0.4);
+    padding-bottom:env(safe-area-inset-bottom, 0);
+  }
+  #bottomNav .bottom-nav-btn{
+    flex:1; background:none; border:none; color:var(--ink-soft); cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    padding:9px 4px 8px; font-family:'Noto Sans TC',sans-serif; font-size:10.5px;
+    transition:color .15s ease;
+  }
+  #bottomNav .bottom-nav-icon{ font-size:18px; line-height:1; }
+  #bottomNav .bottom-nav-btn.active{ color:var(--lane-gold); }
+  #bottomNav .bottom-nav-btn:active{ opacity:0.7; }
+  #bottomNavAdminMenu{
+    position:fixed; bottom:56px; right:12px; z-index:61; display:flex; flex-direction:column; gap:8px;
+    background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:10px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.45);
+  }
+  body.has-bottom-nav{ padding-bottom:64px; }
+
   #liveTicker{
     background:var(--backup); color:#1A0509; overflow:hidden; white-space:nowrap;
     padding:7px 0; font-size:12.5px; font-weight:700; position:sticky; top:0; z-index:50;
@@ -176,7 +198,7 @@
   .gate input:focus{ outline:none; border-color:var(--lane-blue); box-shadow:var(--glow-cyan); }
   .btn{
     font-family:'Noto Sans TC',sans-serif; background:var(--lane-blue); color:#031018; border:none;
-    padding:9px 16px; border-radius:3px; font-size:13px; cursor:pointer; font-weight:700;
+    padding:9px 16px; border-radius:3px; font-size:13px; cursor:pointer; font-weight:700; white-space:nowrap;
   }
   .btn:hover{ box-shadow:var(--glow-cyan); }
   .btn.secondary{ background:transparent; color:var(--ink); border:1px solid var(--line); }
@@ -359,12 +381,6 @@
   .match-control-stage.camera-active .match-control-side{
     background:rgba(10,10,13,0.38); backdrop-filter:blur(1.5px); border-color:rgba(240,193,67,0.3);
   }
-  .match-control-avatar-img{
-    width:96px; height:96px; border-radius:50%; object-fit:cover; margin-bottom:12px;
-    border:3px solid var(--lane-gold);
-    box-shadow:0 0 4px rgba(240,193,67,0.9) inset, 0 0 20px rgba(240,193,67,0.5);
-  }
-  .match-control-avatar-img.hidden{ display:none; }
   .match-control-name{
     font-size:16px; font-weight:900; margin-bottom:10px; letter-spacing:0.5px;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%;
@@ -440,6 +456,7 @@
     <label class="event-tab active" data-tab="ongoing" style="cursor:pointer;">進行中賽事</label>
     <label class="event-tab" data-tab="ended" style="cursor:pointer;">已結束賽事</label>
   </div>
+  <div class="type-select-row hidden" id="endedMonthTabRow" style="margin-bottom:16px; flex-wrap:wrap;"></div>
   <div class="search">
     <input id="eventSearchInput" type="text" placeholder="搜尋賽事名稱或日期…">
   </div>
@@ -595,7 +612,6 @@
       <video id="matchControlVideo" autoplay playsinline muted></video>
       <div class="match-control-scoreboard">
         <div class="match-control-side">
-          <img id="matchControlAvatarA" class="match-control-avatar-img hidden" alt="">
           <div class="match-control-name" id="matchControlNameA"></div>
           <div class="match-control-score" id="matchControlScoreA">0</div>
           <div class="match-control-btns">
@@ -606,7 +622,6 @@
         </div>
         <div class="match-control-vs">VS</div>
         <div class="match-control-side">
-          <img id="matchControlAvatarB" class="match-control-avatar-img hidden" alt="">
           <div class="match-control-name" id="matchControlNameB"></div>
           <div class="match-control-score" id="matchControlScoreB">0</div>
           <div class="match-control-btns">
@@ -928,6 +943,7 @@ let state = { events: [], updatedAt: null };
 let editingState = null;
 let currentEventId = null;
 let activeEventTab = 'ongoing';
+let activeEndedMonth = 'all';
 let activeAdminEventTab = 'ongoing';
 let currentAdminEventId = null;
 let refereeState = null;
@@ -962,6 +978,7 @@ async function loadData(){
   }
   renderEventList();
   renderLiveTicker();
+  syncBottomNav();
 }
 
 async function persist(newState){
@@ -1293,10 +1310,43 @@ function renderEventList(filter){
   const q = (filter||"").trim().toLowerCase();
   wrap.innerHTML = "";
 
-  const events = [...state.events]
+  const monthTabRow = document.getElementById('endedMonthTabRow');
+  let events = [...state.events]
     .filter(e=>!q || e.name.toLowerCase().includes(q) || (e.date||"").includes(q))
     .filter(e=> activeEventTab === 'ended' ? !!e.locked : !e.locked)
     .sort((a,b)=> (b.date||"").localeCompare(a.date||""));
+
+  if(activeEventTab === 'ended'){
+    // Build the set of distinct "YYYY-MM" months present among ended events,
+    // newest first, so people can jump straight to a specific month instead
+    // of scrolling through everything.
+    const months = Array.from(new Set(events.filter(e=>e.date).map(e=> e.date.slice(0,7)))).sort((a,b)=> b.localeCompare(a));
+    if(months.length > 1){
+      monthTabRow.classList.remove('hidden');
+      const monthLabel = (ym)=>{
+        const [y,m] = ym.split('-');
+        return `${y}年${parseInt(m,10)}月`;
+      };
+      monthTabRow.innerHTML = [`<label class="event-tab${activeEndedMonth==='all'?' active':''}" data-month="all" style="cursor:pointer;">全部</label>`]
+        .concat(months.map(ym=>`<label class="event-tab${activeEndedMonth===ym?' active':''}" data-month="${ym}" style="cursor:pointer;">${monthLabel(ym)}</label>`))
+        .join('');
+      monthTabRow.querySelectorAll('.event-tab').forEach(tab=>{
+        tab.addEventListener('click', ()=>{
+          activeEndedMonth = tab.dataset.month;
+          renderEventList(document.getElementById('eventSearchInput').value);
+        });
+      });
+      if(activeEndedMonth !== 'all'){
+        events = events.filter(e=> e.date && e.date.slice(0,7) === activeEndedMonth);
+      }
+    } else {
+      monthTabRow.classList.add('hidden');
+      monthTabRow.innerHTML = '';
+    }
+  } else {
+    monthTabRow.classList.add('hidden');
+    monthTabRow.innerHTML = '';
+  }
 
   if(events.length===0){
     wrap.innerHTML = `<p class="empty-note">${activeEventTab === 'ended' ? '目前沒有已結束的賽事。' : '目前沒有符合條件的賽事。'}</p>`;
@@ -1326,15 +1376,15 @@ function renderEventList(filter){
     const formatLabelHtml = formatLabel ? `<span class="type-chip" style="cursor:default;">${escapeHtml(formatLabel)}</span>` : '';
     const pointsBadgeHtml = getPointsBadge(ev);
     card.innerHTML = `
-      <div>
+      <div style="min-width:0; flex:1;">
         <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span> ${formatLabelHtml} ${pointsBadgeHtml} ${liveBadge}</p>
         <span class="ev-date num">${fmtDate(ev.date)}</span>
         <p class="ev-meta">${meta}</p>
         ${podiumHtml}
       </div>
-      <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
+      <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end; flex-shrink:0;">
         ${registerBtnHtml}
-        <div style="display:flex; gap:8px; align-items:center;">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
           ${hasTournament ? `<button class="btn secondary small" data-action="view-schedule" data-id="${ev.id}">查看賽程</button>` : ''}
           <span class="go">查看名單 →</span>
         </div>
@@ -1584,20 +1634,6 @@ function getAvatarHtml(name, size){
   const url = state.playerAvatars && state.playerAvatars[name];
   if(!url) return '';
   return `<img src="${url}" class="player-avatar" style="width:${size}px; height:${size}px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:6px; border:1px solid var(--line);">`;
-}
-
-// Sets (or hides) one of the large fighter-card avatars on the match control screen.
-function setMatchControlAvatar(imgId, name){
-  const img = document.getElementById(imgId);
-  if(!img) return;
-  const url = state.playerAvatars && state.playerAvatars[name];
-  if(url){
-    img.src = url;
-    img.classList.remove('hidden');
-  } else {
-    img.removeAttribute('src');
-    img.classList.add('hidden');
-  }
 }
 
 function renderAvatarAdmin(){
@@ -2307,11 +2343,51 @@ function setBracketPick(ev, round, matchIndex, name){
   }
 }
 
+function computeRoundRobinFinalStandings(bracket, finalists){
+  const pairs = [[0,1],[0,2],[1,2]];
+  const stats = {};
+  finalists.forEach(n=>{ if(n) stats[n] = { wins:0, losses:0, pf:0, pa:0 }; });
+  pairs.forEach(([i,j])=>{
+    const a = finalists[i], b = finalists[j];
+    if(!a || !b) return;
+    const key = `${i}-${j}`;
+    const pick = bracket.roundRobinPicks ? bracket.roundRobinPicks[key] : null;
+    const sc = bracket.roundRobinScores ? bracket.roundRobinScores[key] : null;
+    if(pick){
+      stats[pick].wins += 1;
+      const loser = pick === a ? b : a;
+      if(stats[loser]) stats[loser].losses += 1;
+    }
+    if(sc){
+      if(stats[a]){ stats[a].pf += sc.a; stats[a].pa += sc.b; }
+      if(stats[b]){ stats[b].pf += sc.b; stats[b].pa += sc.a; }
+    }
+  });
+  return Object.entries(stats)
+    .map(([name, s])=> ({ name, wins:s.wins, losses:s.losses, pf:s.pf, pa:s.pa, diff:s.pf-s.pa }))
+    .sort((x,y)=> y.wins - x.wins || y.diff - x.diff);
+}
+
+function standingsTableHtml(standing, withAvatar){
+  let html = `<div class="swiss-standings-row swiss-standings-head"><span></span><span class="swiss-col-name">選手</span><span>勝</span><span>敗</span><span>得</span><span>失</span><span>淨勝分</span></div>`;
+  standing.forEach((s,i)=>{
+    const diffLabel = (s.diff >= 0 ? '+' : '') + s.diff;
+    html += `<div class="swiss-standings-row">
+      <span class="swiss-col-rank">${i+1}</span>
+      <span class="swiss-col-name">${withAvatar ? getAvatarHtml(s.name, 18) : ''}${escapeHtml(s.name)}</span>
+      <span style="color:var(--lane-gold); font-weight:700;">${s.wins}</span>
+      <span style="color:var(--ink-soft);">${s.losses}</span>
+      <span>${s.pf}</span>
+      <span>${s.pa}</span>
+      <span style="font-weight:700; color:${s.diff>=0?'var(--lane-green)':'var(--backup)'};">${diffLabel}</span>
+    </div>`;
+  });
+  return html;
+}
+
 function renderRoundRobinFinal(bracket, finalists, interactive){
   const pairs = [[0,1],[0,2],[1,2]];
   bracket.roundRobinPicks = bracket.roundRobinPicks || {};
-  const wins = {};
-  finalists.forEach(n=>{ if(n) wins[n] = 0; });
   let matchesHtml = '';
   pairs.forEach(([i,j])=>{
     const a = finalists[i], b = finalists[j];
@@ -2324,7 +2400,6 @@ function renderRoundRobinFinal(bracket, finalists, interactive){
     const key = `${i}-${j}`;
     const pick = bracket.roundRobinPicks[key];
     const sc = bracket.roundRobinScores ? bracket.roundRobinScores[key] : null;
-    if(pick) wins[pick] = (wins[pick]||0) + 1;
     matchesHtml += `<div class="bracket-match" style="margin-bottom:8px;max-width:320px;">`;
     [a,b].forEach((name, idx)=>{
       let cls = 'bracket-slot rr-slot';
@@ -2332,16 +2407,13 @@ function renderRoundRobinFinal(bracket, finalists, interactive){
       const clickable = interactive;
       if(clickable) cls += ' clickable';
       const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
-      const inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+      const inner = getAvatarHtml(name, 18) + escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
       matchesHtml += `<div class="${cls}"${clickable ? ` data-pair="${key}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
     });
     matchesHtml += `</div>`;
   });
-  const standing = Object.entries(wins).sort((a,b)=>b[1]-a[1]);
-  let standingHtml = '';
-  standing.forEach(([name,w],i)=>{
-    standingHtml += `<div style="display:flex;justify-content:space-between;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px;max-width:320px;"><span>${i+1}. ${escapeHtml(name)}</span><span style="color:var(--lane-gold);font-weight:700;">${w} 勝</span></div>`;
-  });
+  const standing = computeRoundRobinFinalStandings(bracket, finalists);
+  const standingHtml = standingsTableHtml(standing, true);
   return `<div class="admin-subsection"><div class="sub-head"><h4>三強循環賽</h4></div>${matchesHtml}</div>
     <div class="admin-subsection"><div class="sub-head"><h4>名次</h4></div>${standingHtml}</div>`;
 }
@@ -2416,10 +2488,6 @@ function renderBracketPlacements(bracket, rounds){
   return `<div class="placement-wrap">${inner}</div>`;
 }
 
-function isRoundLocked(bracket, round){
-  return !!(bracket.lockedRounds && bracket.lockedRounds[round]);
-}
-
 function renderBracket(ev, containerEl, interactive){
   const bracket = ev.bracket;
   if(!containerEl) return;
@@ -2427,25 +2495,21 @@ function renderBracket(ev, containerEl, interactive){
     containerEl.innerHTML = '<p class="empty-note">尚未產生賽程</p>';
     return;
   }
-  bracket.lockedRounds = bracket.lockedRounds || {};
   const rounds = totalRounds(bracket);
   let html = '<div class="bracket-wrap-outer"><div class="bracket-wrap">';
   for(let r=0;r<rounds;r++){
     const entrants = getRoundEntrants(bracket, r);
-    const locked = isRoundLocked(bracket, r);
-    let roundFullyDecided = true;
     let matchesHtml = '';
     for(let i=0;i<entrants.length/2;i++){
       const a = entrants[2*i], b = entrants[2*i+1];
       const pick = bracket.picks[`${r}-${i}`];
       const sc = bracket.scores ? bracket.scores[`${r}-${i}`] : null;
-      if(a && b && a !== b && !pick) roundFullyDecided = false;
       matchesHtml += `<div class="bracket-match">`;
       [a, b].forEach((name, idx)=>{
         let cls = 'bracket-slot';
         if(!name) cls += ' bye';
         if(name && pick && name === pick) cls += ' winner';
-        const clickable = interactive && a && b && a !== b && !locked;
+        const clickable = interactive && a && b && a !== b;
         if(clickable) cls += ' clickable';
         let inner;
         if(!name){
@@ -2458,13 +2522,7 @@ function renderBracket(ev, containerEl, interactive){
       });
       matchesHtml += `</div>`;
     }
-    let lockBtnHtml = '';
-    if(interactive && roundFullyDecided){
-      lockBtnHtml = locked
-        ? `<button class="btn secondary small" data-action="unlock-round" data-round="${r}" style="padding:2px 8px; font-size:11px;">🔓 解鎖</button>`
-        : `<button class="btn gold small" data-action="lock-round" data-round="${r}" style="padding:2px 8px; font-size:11px;">🔒 鎖定此輪</button>`;
-    }
-    html += `<div class="bracket-round"><div class="bracket-round-label" style="display:flex; align-items:center; justify-content:space-between; gap:6px;"><span>第 ${r+1} 輪${locked ? ' 🔒' : ''}</span>${lockBtnHtml}</div>${matchesHtml}</div>`;
+    html += `<div class="bracket-round"><div class="bracket-round-label">第 ${r+1} 輪</div>${matchesHtml}</div>`;
   }
   html += '</div></div>';
   if(bracket.finalStage === 'roundrobin'){
@@ -2493,18 +2551,6 @@ function renderBracket(ev, containerEl, interactive){
     containerEl.querySelectorAll('.rr-slot.clickable').forEach(el=>{
       el.addEventListener('click', ()=>{
         bracket.roundRobinPicks[el.dataset.pair] = el.dataset.name;
-        renderBracket(ev, containerEl, true);
-      });
-    });
-    containerEl.querySelectorAll('[data-action="lock-round"]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        bracket.lockedRounds[parseInt(btn.dataset.round, 10)] = true;
-        renderBracket(ev, containerEl, true);
-      });
-    });
-    containerEl.querySelectorAll('[data-action="unlock-round"]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        delete bracket.lockedRounds[parseInt(btn.dataset.round, 10)];
         renderBracket(ev, containerEl, true);
       });
     });
@@ -2549,8 +2595,12 @@ function drawBracketConnectors(wrapOuterEl){
       const xt = rt.left - wrapRect.left + wrapEl.scrollLeft;
       const yt = rt.top + rt.height/2 - wrapRect.top + wrapEl.scrollTop;
       const xMid = x1 + 14;
+      const xElbow = xt - 14;
+      const midY = (y1 + y2) / 2;
+      // Every segment is purely horizontal or purely vertical — no diagonals —
+      // so the connectors read as clean right-angle bracket lines.
       const path = document.createElementNS(svgNS, 'path');
-      const d = `M ${x1} ${y1} L ${xMid} ${y1} M ${x1} ${y2} L ${xMid} ${y2} M ${xMid} ${y1} L ${xMid} ${y2} M ${xMid} ${(y1+y2)/2} L ${xt} ${yt}`;
+      const d = `M ${x1} ${y1} L ${xMid} ${y1} M ${x1} ${y2} L ${xMid} ${y2} M ${xMid} ${y1} L ${xMid} ${y2} M ${xMid} ${midY} L ${xElbow} ${midY} L ${xElbow} ${yt} L ${xt} ${yt}`;
       path.setAttribute('d', d);
       path.setAttribute('stroke', 'rgba(240,193,67,0.4)');
       path.setAttribute('stroke-width', '1.5');
@@ -2609,7 +2659,7 @@ function generateGroupStage(ev, size){
 function computeGroupStandings(ev, groupIdx){
   const group = ev.group.groups[groupIdx];
   const stats = {};
-  group.forEach(n=>{ if(n) stats[n] = { wins:0, pf:0, pa:0 }; });
+  group.forEach(n=>{ if(n) stats[n] = { wins:0, losses:0, pf:0, pa:0 }; });
   groupPairs(group.length).forEach(([i,j], mi)=>{
     const a = group[i], b = group[j];
     if(a && !b){ stats[a].wins += 1; return; }
@@ -2617,14 +2667,18 @@ function computeGroupStandings(ev, groupIdx){
     if(!a && !b) return;
     const pick = ev.group.picks[`${groupIdx}-${mi}`];
     const sc = ev.group.scores ? ev.group.scores[`${groupIdx}-${mi}`] : null;
-    if(pick) stats[pick].wins += 1;
+    if(pick){
+      stats[pick].wins += 1;
+      const loser = pick === a ? b : a;
+      if(stats[loser]) stats[loser].losses += 1;
+    }
     if(sc){
       stats[a].pf += sc.a; stats[a].pa += sc.b;
       stats[b].pf += sc.b; stats[b].pa += sc.a;
     }
   });
   return Object.entries(stats)
-    .map(([name, s])=> ({ name, wins:s.wins, pf:s.pf, pa:s.pa, diff:s.pf-s.pa }))
+    .map(([name, s])=> ({ name, wins:s.wins, losses:s.losses, pf:s.pf, pa:s.pa, diff:s.pf-s.pa }))
     .sort((x,y)=> y.wins - x.wins || y.diff - x.diff);
 }
 
@@ -2686,7 +2740,7 @@ function renderGroupStage(ev, containerEl, interactive){
         const clickable = interactive && a !== b;
         if(clickable) cls += ' clickable';
         const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
-        const inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+        const inner = getAvatarHtml(name, 18) + escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
         html += `<div class="${cls}"${clickable ? ` data-group="${gi}" data-match="${mi}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
       });
       html += `</div>`;
@@ -2694,11 +2748,21 @@ function renderGroupStage(ev, containerEl, interactive){
 
     const standings = computeGroupStandings(ev, gi);
     const advancers = getGroupAdvancers(ev, gi);
-    html += `<div style="margin-top:8px; max-width:320px;">`;
+    html += `<div style="margin-top:8px; max-width:380px;">`;
+    html += `<div class="swiss-standings-row swiss-standings-head"><span></span><span class="swiss-col-name">選手</span><span>勝</span><span>敗</span><span>得</span><span>失</span><span>淨勝分</span></div>`;
     standings.forEach(s=>{
       const advancing = advancers && advancers.includes(s.name);
       const diffLabel = (s.diff >= 0 ? '+' : '') + s.diff;
-      html += `<div style="display:flex;justify-content:space-between;padding:4px 6px;font-size:12.5px;${advancing ? 'color:var(--lane-gold);font-weight:700;' : 'color:var(--ink-soft);'}"><span>${escapeHtml(s.name)}</span><span>${s.wins} 勝　${diffLabel}${advancing ? ' ✓ 晉級' : ''}</span></div>`;
+      const nameColor = advancing ? 'color:var(--lane-gold); font-weight:700;' : '';
+      html += `<div class="swiss-standings-row">
+        <span class="swiss-col-rank"></span>
+        <span class="swiss-col-name" style="${nameColor}">${getAvatarHtml(s.name, 18)}${escapeHtml(s.name)}${advancing ? ' ✓' : ''}</span>
+        <span style="color:var(--lane-gold); font-weight:700;">${s.wins}</span>
+        <span style="color:var(--ink-soft);">${s.losses}</span>
+        <span>${s.pf}</span>
+        <span>${s.pa}</span>
+        <span style="font-weight:700; color:${s.diff>=0?'var(--lane-green)':'var(--backup)'};">${diffLabel}</span>
+      </div>`;
     });
     html += `</div>`;
 
@@ -3190,13 +3254,6 @@ function wireMatchRowClicks(containerEl, ev, kind){
       const matchVal = el.dataset.match;
       const nameA = el.dataset.nameA;
       const nameB = el.dataset.nameB;
-      if(kind === 'bracket' && ev.bracket && /^\d+$/.test(roundVal)){
-        const r = parseInt(roundVal, 10);
-        if(r > 0 && !isRoundLocked(ev.bracket, r - 1)){
-          showStatus('refStatusMsg', `第 ${r} 輪尚未鎖定，請先請後台管理員鎖定第 ${r} 輪，再繼續登記第 ${r+1} 輪。`, true);
-          return;
-        }
-      }
       const existing = getExistingScore(ev, kind, roundVal, matchVal);
       openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existing);
     });
@@ -3217,8 +3274,6 @@ function openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existingSc
   document.getElementById('matchControlPanel').classList.remove('hidden');
   document.getElementById('matchControlNameA').textContent = nameA;
   document.getElementById('matchControlNameB').textContent = nameB;
-  setMatchControlAvatar('matchControlAvatarA', nameA);
-  setMatchControlAvatar('matchControlAvatarB', nameB);
   const initialErrEl = document.getElementById('matchControlError');
   initialErrEl.textContent = '';
   initialErrEl.style.display = 'none';
@@ -3425,10 +3480,19 @@ function renderRefereeGroup(ev, containerEl){
       html += refereeMatchRowHtml(a, b, group.picks[key], group.scores[key], gi, mi);
     });
     const standings = computeGroupStandings(ev, gi);
-    html += `<div style="margin-top:8px; max-width:360px;">`;
+    html += `<div style="margin-top:8px; max-width:380px;">`;
+    html += `<div class="swiss-standings-row swiss-standings-head"><span></span><span class="swiss-col-name">選手</span><span>勝</span><span>敗</span><span>得</span><span>失</span><span>淨勝分</span></div>`;
     standings.forEach(s=>{
       const diffLabel = (s.diff >= 0 ? '+' : '') + s.diff;
-      html += `<div style="display:flex;justify-content:space-between;padding:4px 6px;font-size:12.5px;color:var(--ink-soft);"><span>${escapeHtml(s.name)}</span><span>${s.wins} 勝　${diffLabel}</span></div>`;
+      html += `<div class="swiss-standings-row">
+        <span class="swiss-col-rank"></span>
+        <span class="swiss-col-name">${escapeHtml(s.name)}</span>
+        <span style="color:var(--lane-gold); font-weight:700;">${s.wins}</span>
+        <span style="color:var(--ink-soft);">${s.losses}</span>
+        <span>${s.pf}</span>
+        <span>${s.pa}</span>
+        <span style="font-weight:700; color:${s.diff>=0?'var(--lane-green)':'var(--backup)'};">${diffLabel}</span>
+      </div>`;
     });
     html += `</div></div>`;
   });
@@ -3543,6 +3607,8 @@ function renderRefereeBracket(ev, containerEl){
       const key = `${i}-${j}`;
       html += refereeMatchRowHtml(a, b, bracket.roundRobinPicks[key], bracket.roundRobinScores[key], 'rr', key);
     });
+    const rrStandings = computeRoundRobinFinalStandings(bracket, finalists);
+    html += `<div style="margin-top:8px; max-width:380px;">${standingsTableHtml(rrStandings, false)}</div>`;
     html += '</div>';
   } else {
     const semiLosers = getSemifinalLosers(bracket, rounds);
@@ -4069,7 +4135,64 @@ const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','admin
 function hideAllViews(){
   TOP_LEVEL_VIEWS.forEach(id=> document.getElementById(id).classList.add('hidden'));
   document.getElementById('publicFooter').classList.add('hidden');
+  setTimeout(syncBottomNav, 0);
 }
+
+// Shows the fixed bottom nav only on the main public-facing screens (list,
+// detail, leaderboard) and highlights whichever tab matches the current view.
+function syncBottomNav(){
+  const nav = document.getElementById('bottomNav');
+  const isEventList = !document.getElementById('publicEventList').classList.contains('hidden');
+  const isEventDetail = !document.getElementById('publicEventDetail').classList.contains('hidden');
+  const isLeaderboard = !document.getElementById('leaderboardView').classList.contains('hidden');
+  const show = isEventList || isEventDetail || isLeaderboard;
+  document.body.classList.toggle('has-bottom-nav', show);
+  nav.classList.toggle('hidden', !show);
+  if(!show){
+    document.getElementById('bottomNavAdminMenu').classList.add('hidden');
+    return;
+  }
+  let active = null;
+  if(isLeaderboard) active = 'leaderboard';
+  else if(isEventList || isEventDetail) active = (activeEventTab === 'ended') ? 'ended' : 'ongoing';
+  nav.querySelectorAll('.bottom-nav-btn').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.nav === active);
+  });
+}
+
+document.querySelectorAll('#bottomNav .bottom-nav-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const action = btn.dataset.nav;
+    document.getElementById('bottomNavAdminMenu').classList.add('hidden');
+    if(action === 'ongoing'){
+      activeEventTab = 'ongoing';
+      activeEndedMonth = 'all';
+      hideAllViews();
+      document.getElementById('publicFooter').classList.remove('hidden');
+      showEventList();
+      document.querySelectorAll('#eventTabRow .event-tab').forEach(t=> t.classList.toggle('active', t.dataset.tab === 'ongoing'));
+    } else if(action === 'ended'){
+      activeEventTab = 'ended';
+      activeEndedMonth = 'all';
+      hideAllViews();
+      document.getElementById('publicFooter').classList.remove('hidden');
+      showEventList();
+      document.querySelectorAll('#eventTabRow .event-tab').forEach(t=> t.classList.toggle('active', t.dataset.tab === 'ended'));
+    } else if(action === 'leaderboard'){
+      showLeaderboard();
+    } else if(action === 'admin-menu'){
+      document.getElementById('bottomNavAdminMenu').classList.toggle('hidden');
+    }
+  });
+});
+document.getElementById('bottomNavRefereeBtn').addEventListener('click', ()=>{
+  document.getElementById('bottomNavAdminMenu').classList.add('hidden');
+  showRefereeGate();
+});
+document.getElementById('bottomNavAdminBtn').addEventListener('click', ()=>{
+  document.getElementById('bottomNavAdminMenu').classList.add('hidden');
+  document.getElementById('toAdminBtn').click();
+});
 
 function showPublic(){
   hideAllViews();
@@ -4421,6 +4544,7 @@ document.getElementById('eventSearchInput').addEventListener('input', e=>{
 document.querySelectorAll('#eventTabRow .event-tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
     activeEventTab = tab.dataset.tab;
+    activeEndedMonth = 'all';
     document.querySelectorAll('#eventTabRow .event-tab').forEach(t=> t.classList.toggle('active', t === tab));
     renderEventList(document.getElementById('eventSearchInput').value);
   });
@@ -4490,5 +4614,16 @@ setInterval(pollForUpdates, 12000);
 
 loadData();
 </script>
+<nav id="bottomNav" class="hidden">
+  <button class="bottom-nav-btn" data-nav="ongoing"><span class="bottom-nav-icon">🔴</span><span>進行中</span></button>
+  <button class="bottom-nav-btn" data-nav="ended"><span class="bottom-nav-icon">🏁</span><span>過去比賽</span></button>
+  <button class="bottom-nav-btn" data-nav="leaderboard"><span class="bottom-nav-icon">🏆</span><span>榮譽榜</span></button>
+  <button class="bottom-nav-btn" data-nav="admin-menu"><span class="bottom-nav-icon">⚙️</span><span>裁判／後台</span></button>
+</nav>
+<div id="bottomNavAdminMenu" class="hidden">
+  <button class="btn secondary" id="bottomNavRefereeBtn">🏁 裁判登錄</button>
+  <button class="btn gold" id="bottomNavAdminBtn">後台管理</button>
+</div>
+
 </body>
 </html>
