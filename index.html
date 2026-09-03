@@ -366,7 +366,13 @@
     padding:12px 14px; margin-bottom:10px; max-width:460px; cursor:pointer;
   }
   .referee-match-row:hover{ border-color:var(--lane-blue); }
-  .referee-match-row.decided{ border-color:rgba(240,193,67,0.35); }
+  .referee-match-row.decided{ border-color:var(--lane-gold); background:rgba(240,193,67,0.16); }
+  .bracket-match.referee-clickable{ cursor:pointer; transition:background .15s ease, border-color .15s ease; }
+  .bracket-match.referee-clickable:hover{ border-color:var(--lane-blue); }
+  .bracket-match.referee-decided{ border-color:var(--lane-gold); background:rgba(240,193,67,0.16); }
+  .referee-tree-match{ cursor:pointer; transition:border-color .15s ease, background .15s ease; }
+  .referee-tree-match:hover{ border-color:var(--lane-blue); }
+  .referee-tree-match.decided{ background:rgba(240,193,67,0.22); border-color:var(--lane-gold); }
   .referee-match-row .referee-name{ flex:1; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .referee-match-row .referee-name.winner{ color:var(--lane-gold); font-weight:700; }
   .referee-row-score{ font-family:'Oswald',sans-serif; font-size:13px; color:var(--ink-soft); padding:0 8px; white-space:nowrap; }
@@ -3309,6 +3315,34 @@ function refereeMatchRowHtml(a, b, pick, existingScore, roundIdx, matchIdx){
   `;
 }
 
+// Match box styled like the visual bracket tree (used inside .bracket-round
+// columns) instead of a flat row — lets referees follow the tree the same
+// way admins/spectators see it. Clicking opens the same scoring screen.
+function refereeBracketMatchHtml(a, b, pick, existingScore, roundVal, matchVal){
+  const decided = !!pick;
+  const clickable = a && b && a !== b;
+  const cls = 'bracket-match' + (clickable ? ' referee-clickable' : '') + (decided ? ' referee-decided' : '');
+  const attrs = clickable ? ` data-round="${roundVal}" data-match="${matchVal}" data-name-a="${escapeAttr(a)}" data-name-b="${escapeAttr(b)}"` : '';
+  const scA = existingScore ? existingScore.a : null;
+  const scB = existingScore ? existingScore.b : null;
+  return `<div class="${cls}"${attrs}>
+    <div class="bracket-slot${pick===a?' winner':''}">${escapeHtml(a)}${scA!=null ? `<span class="bracket-score">${scA}</span>` : ''}</div>
+    <div class="bracket-slot${pick===b?' winner':''}">${escapeHtml(b)}${scB!=null ? `<span class="bracket-score">${scB}</span>` : ''}</div>
+  </div>`;
+}
+
+function wireRefereeBracketMatchClicks(containerEl, ev, kind){
+  containerEl.querySelectorAll('.bracket-match.referee-clickable[data-round]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const roundVal = el.dataset.round;
+      const matchVal = el.dataset.match;
+      const nameA = el.dataset.nameA, nameB = el.dataset.nameB;
+      const existing = getExistingScore(ev, kind, roundVal, matchVal);
+      openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existing);
+    });
+  });
+}
+
 // Reads whatever score (if any) is currently stored for a given match, so
 // the control screen can resume from where it left off.
 function getExistingScore(ev, kind, roundVal, matchVal){
@@ -3644,11 +3678,7 @@ function renderRefereeGroup(ev, containerEl){
     });
     standingsHtml += `</div>`;
     const complete = groupComplete(ev, gi);
-    if(complete){
-      html += `<details class="swiss-round-details"><summary><span class="swiss-round-arrow">▶</span><h4>第 ${gi+1} 組（已完成）</h4></summary><div class="swiss-round-body">${matchesHtml}${standingsHtml}</div></details>`;
-    } else {
-      html += `<div class="admin-subsection"><div class="sub-head"><h4>第 ${gi+1} 組</h4></div>${matchesHtml}${standingsHtml}</div>`;
-    }
+    html += `<div class="admin-subsection"><div class="sub-head"><h4>第 ${gi+1} 組${complete ? '（已完成）' : ''}</h4></div>${matchesHtml}${standingsHtml}</div>`;
   });
   containerEl.innerHTML = html;
   wireMatchRowClicks(containerEl, ev, 'group');
@@ -3666,52 +3696,55 @@ function renderRefereeDoubleElim(ev, containerEl){
   const _wt = ev.winThreshold || 4;
   let html = `<p class="referee-hint">獲勝方 ${_wt}～${_wt+2} 分，落敗方 0～${_wt-1} 分。輸家第一次會掉到敗部，敗部再輸一場就淘汰。</p>`;
 
-  let pendingHtml = '', doneHtml = '';
-  let pendingCount = 0, doneCount = 0;
-
   const k = wbRounds(de);
+  html += '<p style="font-family:\'Oswald\',sans-serif; font-size:12px; letter-spacing:1.5px; color:var(--ink-soft); text-transform:uppercase; margin:16px 0 8px;">勝部</p>';
+  html += '<div class="bracket-wrap-outer"><div class="bracket-wrap">';
   for(let r=0;r<k;r++){
     const entrants = getRoundEntrants(de.wb, r);
-    let roundPending = '', roundDone = '';
+    html += `<div class="bracket-round"><div class="bracket-round-label">勝部第 ${r+1} 輪</div>`;
     for(let i=0;i<entrants.length/2;i++){
       const a = entrants[2*i], b = entrants[2*i+1];
-      if(!(a && b && a !== b)){
-        const only = a || b;
-        if(only) roundDone += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
-        continue;
-      }
       const key = `${r}-${i}`;
-      const row = refereeMatchRowHtml(a, b, de.wb.picks[key], de.wb.scores[key], `wb-${r}`, i);
-      if(de.wb.picks[key]){ roundDone += row; doneCount++; }
-      else { roundPending += row; pendingCount++; }
+      const pick = de.wb.picks[key];
+      const sc = de.wb.scores[key];
+      const clickable = a && b && a !== b;
+      html += `<div class="bracket-match referee-tree-match${pick?' decided':''}"${clickable ? ` data-round="wb-${r}" data-match="${i}" data-name-a="${escapeAttr(a)}" data-name-b="${escapeAttr(b)}"` : ''}>`;
+      [a, b].forEach((name, idx)=>{
+        let cls = 'bracket-slot';
+        if(!name) cls += ' bye';
+        if(name && pick && name === pick) cls += ' winner';
+        let inner;
+        if(!name){ inner = '輪空'; }
+        else {
+          const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+          inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+        }
+        html += `<div class="${cls}">${inner}</div>`;
+      });
+      html += `</div>`;
     }
-    if(roundPending) pendingHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">勝部第 ${r+1} 輪</p>` + roundPending;
-    if(roundDone) doneHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">勝部第 ${r+1} 輪</p>` + roundDone;
+    html += `</div>`;
   }
+  html += '</div></div>';
 
   const lbTotal = totalLbRounds(de);
-  for(let lr=0; lr<lbTotal; lr++){
-    const entrants = lbRoundEntrants(de, lr);
-    let roundPending = '', roundDone = '';
-    for(let i=0;i<entrants.length/2;i++){
-      const a = entrants[2*i], b = entrants[2*i+1];
-      if(!(a && b && a !== b)){
-        const only = a || b;
-        if(only) roundDone += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
-        continue;
+  if(lbTotal > 0){
+    html += '<p style="font-family:\'Oswald\',sans-serif; font-size:12px; letter-spacing:1.5px; color:var(--ink-soft); text-transform:uppercase; margin:16px 0 8px;">敗部</p>';
+    for(let lr=0; lr<lbTotal; lr++){
+      const entrants = lbRoundEntrants(de, lr);
+      let roundHtml = '';
+      for(let i=0;i<entrants.length/2;i++){
+        const a = entrants[2*i], b = entrants[2*i+1];
+        if(!(a && b && a !== b)){
+          const only = a || b;
+          if(only) roundHtml += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
+          continue;
+        }
+        const key = `${lr}-${i}`;
+        roundHtml += refereeMatchRowHtml(a, b, de.lb.picks[key], de.lb.scores[key], `lb-${lr}`, i);
       }
-      const key = `${lr}-${i}`;
-      const row = refereeMatchRowHtml(a, b, de.lb.picks[key], de.lb.scores[key], `lb-${lr}`, i);
-      if(de.lb.picks[key]){ roundDone += row; doneCount++; }
-      else { roundPending += row; pendingCount++; }
+      if(roundHtml) html += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">敗部第 ${lr+1} 輪</p>` + roundHtml;
     }
-    if(roundPending) pendingHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">敗部第 ${lr+1} 輪</p>` + roundPending;
-    if(roundDone) doneHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">敗部第 ${lr+1} 輪</p>` + roundDone;
-  }
-
-  html += `<div class="admin-subsection"><div class="sub-head"><h4>尚未完成（${pendingCount}）</h4></div>${pendingHtml || '<p class="empty-note">全部都已經登記完成。</p>'}</div>`;
-  if(doneCount > 0){
-    html += `<details class="swiss-round-details"><summary><span class="swiss-round-arrow">▶</span><h4>已完成（${doneCount}）</h4></summary><div class="swiss-round-body">${doneHtml}</div></details>`;
   }
 
   const wbChamp = getWbChampion(de), lbChamp = getLbChampion(de);
@@ -3728,6 +3761,17 @@ function renderRefereeDoubleElim(ev, containerEl){
 
   containerEl.innerHTML = html;
   wireMatchRowClicks(containerEl, ev, 'doubleElim');
+  containerEl.querySelectorAll('.referee-tree-match[data-round]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const roundVal = el.dataset.round;
+      const matchVal = el.dataset.match;
+      const nameA = el.dataset.nameA, nameB = el.dataset.nameB;
+      const existing = getExistingScore(ev, 'doubleElim', roundVal, matchVal);
+      openMatchControl(ev, 'doubleElim', roundVal, matchVal, nameA, nameB, existing);
+    });
+  });
+  const wrapOuter = containerEl.querySelector('.bracket-wrap-outer');
+  if(wrapOuter) requestAnimationFrame(()=> drawBracketConnectors(wrapOuter));
 }
 
 function renderRefereeBracket(ev, containerEl){
@@ -3741,65 +3785,92 @@ function renderRefereeBracket(ev, containerEl){
   bracket.roundRobinScores = bracket.roundRobinScores || {};
   const rounds = totalRounds(bracket);
   const _wt = ev.winThreshold || 4;
-  let html = `<p class="referee-hint">獲勝方 ${_wt}～${_wt+2} 分，落敗方 0～${_wt-1} 分。輸入比分後按確認即可自動晉級。</p>`;
-  let pendingHtml = '', doneHtml = '';
-  let pendingCount = 0, doneCount = 0;
+  let html = `<p class="referee-hint">獲勝方 ${_wt}～${_wt+2} 分，落敗方 0～${_wt-1} 分。點對戰框輸入比分。</p>`;
+  html += '<div class="bracket-wrap-outer"><div class="bracket-wrap">';
   for(let r=0;r<rounds;r++){
     const entrants = getRoundEntrants(bracket, r);
-    let roundPending = '', roundDone = '';
+    html += `<div class="bracket-round"><div class="bracket-round-label">第 ${r+1} 輪</div>`;
     for(let i=0;i<entrants.length/2;i++){
       const a = entrants[2*i], b = entrants[2*i+1];
-      if(!(a && b && a !== b)){
-        const only = a || b;
-        if(only) roundDone += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
-        continue;
-      }
       const key = `${r}-${i}`;
-      const row = refereeMatchRowHtml(a, b, bracket.picks[key], bracket.scores[key], r, i);
-      if(bracket.picks[key]){ roundDone += row; doneCount++; }
-      else { roundPending += row; pendingCount++; }
+      const pick = bracket.picks[key];
+      const sc = bracket.scores[key];
+      const clickable = a && b && a !== b;
+      html += `<div class="bracket-match referee-tree-match${pick?' decided':''}"${clickable ? ` data-round="${r}" data-match="${i}" data-name-a="${escapeAttr(a)}" data-name-b="${escapeAttr(b)}"` : ''}>`;
+      [a, b].forEach((name, idx)=>{
+        let cls = 'bracket-slot';
+        if(!name) cls += ' bye';
+        if(name && pick && name === pick) cls += ' winner';
+        let inner;
+        if(!name){ inner = '輪空'; }
+        else {
+          const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+          inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+        }
+        html += `<div class="${cls}">${inner}</div>`;
+      });
+      html += `</div>`;
     }
-    if(roundPending) pendingHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">第 ${r+1} 輪</p>` + roundPending;
-    if(roundDone) doneHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">第 ${r+1} 輪</p>` + roundDone;
+    html += `</div>`;
   }
+  html += '</div></div>';
+
   if(bracket.finalStage === 'roundrobin'){
     const finalists = getRoundEntrants(bracket, rounds);
     const pairs = [[0,1],[0,2],[1,2]];
-    let rrHtml = '';
+    html += '<div class="admin-subsection"><div class="sub-head"><h4>三強循環賽</h4></div>';
     pairs.forEach(([i,j])=>{
       const a = finalists[i], b = finalists[j];
       if(!a && !b) return;
       if(!a || !b){
-        rrHtml += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(a||b)}（輪空晉級）</div></div>`;
+        html += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(a||b)}（輪空晉級）</div></div>`;
         return;
       }
       const key = `${i}-${j}`;
-      const row = refereeMatchRowHtml(a, b, bracket.roundRobinPicks[key], bracket.roundRobinScores[key], 'rr', key);
-      if(bracket.roundRobinPicks[key]){ doneHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">三強循環賽</p>` + row; doneCount++; }
-      else { pendingHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">三強循環賽</p>` + row; pendingCount++; }
+      const pick = bracket.roundRobinPicks[key];
+      const sc = bracket.roundRobinScores[key];
+      html += `<div class="bracket-match referee-tree-match${pick?' decided':''}" style="max-width:360px;" data-round="rr" data-match="${key}" data-name-a="${escapeAttr(a)}" data-name-b="${escapeAttr(b)}">`;
+      [a, b].forEach((name, idx)=>{
+        let cls = 'bracket-slot';
+        if(pick === name) cls += ' winner';
+        const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+        html += `<div class="${cls}">${escapeHtml(name)}${scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : ''}</div>`;
+      });
+      html += `</div>`;
     });
+    const rrStandings = computeRoundRobinFinalStandings(bracket, finalists);
+    html += `<div style="margin-top:8px; max-width:380px;">${standingsTableHtml(rrStandings, false)}</div>`;
+    html += '</div>';
   } else {
     const semiLosers = getSemifinalLosers(bracket, rounds);
     if(semiLosers.length === 2){
       const [a, b] = semiLosers;
-      const row = refereeMatchRowHtml(a, b, bracket.picks['3rd'], bracket.scores['3rd'], '3rd', 0);
-      if(bracket.picks['3rd']){ doneHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">季殿軍賽</p>` + row; doneCount++; }
-      else { pendingHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">季殿軍賽</p>` + row; pendingCount++; }
+      const pick = bracket.picks['3rd'];
+      const sc = bracket.scores['3rd'];
+      html += `<div class="admin-subsection"><div class="sub-head"><h4>季殿軍賽</h4></div>`;
+      html += `<div class="bracket-match referee-tree-match${pick?' decided':''}" style="max-width:360px;" data-round="3rd" data-match="0" data-name-a="${escapeAttr(a)}" data-name-b="${escapeAttr(b)}">`;
+      [a, b].forEach((name, idx)=>{
+        let cls = 'bracket-slot';
+        if(pick === name) cls += ' winner';
+        const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
+        html += `<div class="${cls}">${escapeHtml(name)}${scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : ''}</div>`;
+      });
+      html += `</div></div>`;
     }
-  }
-  html += `<div class="admin-subsection"><div class="sub-head"><h4>尚未完成（${pendingCount}）</h4></div>${pendingHtml || '<p class="empty-note">全部都已經登記完成。</p>'}</div>`;
-  if(doneCount > 0){
-    html += `<details class="swiss-round-details"><summary><span class="swiss-round-arrow">▶</span><h4>已完成（${doneCount}）</h4></summary><div class="swiss-round-body">${doneHtml}</div></details>`;
-  }
-  if(bracket.finalStage !== 'roundrobin'){
     html += renderBracketPlacements(bracket, rounds);
-  } else {
-    const finalists = getRoundEntrants(bracket, rounds);
-    const rrStandings = computeRoundRobinFinalStandings(bracket, finalists);
-    html += `<div class="admin-subsection"><div class="sub-head"><h4>名次</h4></div><div style="max-width:380px;">${standingsTableHtml(rrStandings, false)}</div></div>`;
   }
   containerEl.innerHTML = html;
-  wireMatchRowClicks(containerEl, ev, 'bracket');
+  containerEl.querySelectorAll('.referee-tree-match[data-round]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const roundVal = el.dataset.round;
+      const matchVal = el.dataset.match;
+      const nameA = el.dataset.nameA, nameB = el.dataset.nameB;
+      const existing = getExistingScore(ev, 'bracket', roundVal, matchVal);
+      openMatchControl(ev, 'bracket', roundVal, matchVal, nameA, nameB, existing);
+    });
+  });
+  const wrapOuter = containerEl.querySelector('.bracket-wrap-outer');
+  if(wrapOuter) requestAnimationFrame(()=> drawBracketConnectors(wrapOuter));
 }
 
 
