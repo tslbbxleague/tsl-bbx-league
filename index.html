@@ -919,6 +919,17 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<nav id="bottomNav" class="hidden">
+  <button class="bottom-nav-btn" data-nav="ongoing"><span class="bottom-nav-icon">🔴</span><span>進行中</span></button>
+  <button class="bottom-nav-btn" data-nav="ended"><span class="bottom-nav-icon">🏁</span><span>過去比賽</span></button>
+  <button class="bottom-nav-btn" data-nav="leaderboard"><span class="bottom-nav-icon">🏆</span><span>榮譽榜</span></button>
+  <button class="bottom-nav-btn" data-nav="admin-menu"><span class="bottom-nav-icon">⚙️</span><span>裁判／後台</span></button>
+</nav>
+<div id="bottomNavAdminMenu" class="hidden">
+  <button class="btn secondary" id="bottomNavRefereeBtn">🏁 裁判登錄</button>
+  <button class="btn gold" id="bottomNavAdminBtn">後台管理</button>
+</div>
+
 <script>
 const ADMIN_PASSWORD = "tsl520";
 // Six separate referee logins so each ref has their own identity — swap
@@ -4614,16 +4625,5 @@ setInterval(pollForUpdates, 12000);
 
 loadData();
 </script>
-<nav id="bottomNav" class="hidden">
-  <button class="bottom-nav-btn" data-nav="ongoing"><span class="bottom-nav-icon">🔴</span><span>進行中</span></button>
-  <button class="bottom-nav-btn" data-nav="ended"><span class="bottom-nav-icon">🏁</span><span>過去比賽</span></button>
-  <button class="bottom-nav-btn" data-nav="leaderboard"><span class="bottom-nav-icon">🏆</span><span>榮譽榜</span></button>
-  <button class="bottom-nav-btn" data-nav="admin-menu"><span class="bottom-nav-icon">⚙️</span><span>裁判／後台</span></button>
-</nav>
-<div id="bottomNavAdminMenu" class="hidden">
-  <button class="btn secondary" id="bottomNavRefereeBtn">🏁 裁判登錄</button>
-  <button class="btn gold" id="bottomNavAdminBtn">後台管理</button>
-</div>
-
 </body>
 </html>
