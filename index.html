@@ -2025,8 +2025,18 @@ function computeSlotGamePool(game){
 }
 
 function renderSlotGameAdmin(){
-  editingState.lotteryGame = editingState.lotteryGame || { eventId:null, prizeName:'', prizeCount:0, winProbability:15, roster:[], confirmedWinners:[], wheelResolvedLosers:[], gameId:null, plays:[] };
+  editingState.lotteryGame = editingState.lotteryGame || {};
   const game = editingState.lotteryGame;
+  // Defensive against older saved shapes of this object (this feature went
+  // through a few redesigns) — always ensure every field we rely on exists,
+  // rather than assuming a fully-formed object is already there.
+  game.roster = Array.isArray(game.roster) ? game.roster : [];
+  game.confirmedWinners = Array.isArray(game.confirmedWinners) ? game.confirmedWinners : [];
+  game.wheelResolvedLosers = Array.isArray(game.wheelResolvedLosers) ? game.wheelResolvedLosers : [];
+  game.plays = Array.isArray(game.plays) ? game.plays : [];
+  game.prizeCount = game.prizeCount || 0;
+  game.winProbability = game.winProbability || 15;
+  game.prizeName = game.prizeName || '';
   const sel = document.getElementById('slotGameEventSelect');
   const individualEvents = editingState.events.filter(e=> e.type === 'individual');
   sel.innerHTML = '<option value="">－ 尚未選擇 －</option>' + individualEvents.map(e=>
