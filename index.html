@@ -126,6 +126,18 @@
   }
   .type-chip.individual{ background:rgba(58,199,255,0.14); color:var(--lane-blue); border:1px solid rgba(58,199,255,0.3); }
   .type-chip.team{ background:rgba(240,193,67,0.14); color:var(--lane-gold); border:1px solid rgba(240,193,67,0.3); }
+
+  .ev-chip-row{
+    display:flex; gap:6px; align-items:center; margin-bottom:8px;
+    overflow-x:auto; white-space:nowrap; -webkit-overflow-scrolling:touch;
+  }
+  .ev-chip-row .type-chip{ flex-shrink:0; margin-left:0; }
+
+  .card-action-btn{
+    width:100%; background:var(--panel); color:var(--lane-gold); border:1px solid rgba(240,193,67,0.4);
+    padding:9px 14px; font-size:13px; border-radius:4px; font-weight:700;
+  }
+  .card-action-btn:hover{ background:rgba(240,193,67,0.1); }
   .type-chip.live-badge{
     background:rgba(255,59,92,0.14); color:var(--backup); border:1px solid rgba(255,59,92,0.35);
     cursor:pointer; font-family:'Noto Sans TC',sans-serif; animation:live-pulse 1.8s ease-in-out infinite;
@@ -225,6 +237,16 @@
   }
   .type-select-row input{ accent-color:var(--lane-blue); }
   .event-tab.active{ border-color:var(--lane-gold); color:var(--lane-gold); background:rgba(240,193,67,0.08); font-weight:700; }
+
+  .month-tab-row{
+    display:flex; gap:6px; overflow-x:auto; white-space:nowrap; margin-bottom:16px;
+    padding-bottom:4px; -webkit-overflow-scrolling:touch;
+  }
+  .month-tab-row .month-tab{
+    flex-shrink:0; border:1px solid var(--line); border-radius:14px; padding:6px 13px;
+    font-size:12px; cursor:pointer; background:var(--panel); color:var(--ink-soft);
+  }
+  .month-tab-row .month-tab.active{ border-color:var(--lane-gold); color:var(--lane-gold); background:rgba(240,193,67,0.1); font-weight:700; }
 
   .admin-list-editor{ margin-bottom:16px; }
   .col label.field-label{
@@ -456,7 +478,7 @@
     <label class="event-tab active" data-tab="ongoing" style="cursor:pointer;">進行中賽事</label>
     <label class="event-tab" data-tab="ended" style="cursor:pointer;">已結束賽事</label>
   </div>
-  <div class="type-select-row hidden" id="endedMonthTabRow" style="margin-bottom:16px; flex-wrap:wrap;"></div>
+  <div class="month-tab-row hidden" id="endedMonthTabRow"></div>
   <div class="search">
     <input id="eventSearchInput" type="text" placeholder="搜尋賽事名稱或日期…">
   </div>
@@ -1438,10 +1460,10 @@ function renderEventList(filter){
         const [y,m] = ym.split('-');
         return `${y}年${parseInt(m,10)}月`;
       };
-      monthTabRow.innerHTML = [`<label class="event-tab${activeEndedMonth==='all'?' active':''}" data-month="all" style="cursor:pointer;">全部</label>`]
-        .concat(months.map(ym=>`<label class="event-tab${activeEndedMonth===ym?' active':''}" data-month="${ym}" style="cursor:pointer;">${monthLabel(ym)}</label>`))
+      monthTabRow.innerHTML = [`<span class="month-tab${activeEndedMonth==='all'?' active':''}" data-month="all">全部</span>`]
+        .concat(months.map(ym=>`<span class="month-tab${activeEndedMonth===ym?' active':''}" data-month="${ym}">${monthLabel(ym)}</span>`))
         .join('');
-      monthTabRow.querySelectorAll('.event-tab').forEach(tab=>{
+      monthTabRow.querySelectorAll('.month-tab').forEach(tab=>{
         tab.addEventListener('click', ()=>{
           activeEndedMonth = tab.dataset.month;
           renderEventList(document.getElementById('eventSearchInput').value);
@@ -1479,25 +1501,31 @@ function renderEventList(filter){
     const podiumHtml = podium
       ? `<p class="ev-meta" style="color:var(--lane-gold);">🏆 ${escapeHtml(podium.champion)}${podium.runnerUp ? `　🥈 ${escapeHtml(podium.runnerUp)}` : ''}${podium.third.length ? `　🥉 ${podium.third.map(escapeHtml).join('、')}` : ''}${podium.fourth ? `　4️⃣ ${escapeHtml(podium.fourth)}` : ''}</p>`
       : '';
-    const registerBtnHtml = ev.registrationOpen
-      ? `<button class="btn gold small" data-action="quick-register" data-id="${ev.id}">📝 報名</button>`
-      : '';
+    let registerBtnHtml = '';
+    if(!ev.locked){
+      registerBtnHtml = ev.registrationOpen
+        ? `<button class="btn card-action-btn" data-action="quick-register" data-id="${ev.id}">📝 報名</button>`
+        : `<button class="btn card-action-btn" disabled style="opacity:0.5; cursor:default;">🔒 結束報名</button>`;
+    }
     const hasTournament = ev.started && (ev.bracket || ev.swiss || ev.group || ev.doubleElim);
     const formatLabel = getFormatSizeLabel(ev);
     const formatLabelHtml = formatLabel ? `<span class="type-chip" style="cursor:default;">${escapeHtml(formatLabel)}</span>` : '';
     const pointsBadgeHtml = getPointsBadge(ev);
     card.innerHTML = `
-      <div style="min-width:0; flex:1;">
-        <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span> ${formatLabelHtml} ${pointsBadgeHtml} ${liveBadge}</p>
-        <span class="ev-date num">${fmtDate(ev.date)}</span>
-        <p class="ev-meta">${meta}</p>
+      <div style="min-width:0; width:100%;">
+        <p class="ev-name" style="margin-bottom:8px;">${escapeHtml(ev.name)}</p>
+        <div class="ev-chip-row">
+          <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span>
+          ${formatLabelHtml}
+          ${pointsBadgeHtml}
+          ${liveBadge}
+        </div>
+        <p class="ev-meta"><span class="ev-date num">${fmtDate(ev.date)}</span>　${meta}</p>
         ${podiumHtml}
-      </div>
-      <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end; flex-shrink:0;">
-        ${registerBtnHtml}
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
-          ${hasTournament ? `<button class="btn secondary small" data-action="view-schedule" data-id="${ev.id}">查看賽程</button>` : ''}
-          <span class="go">查看名單 →</span>
+        <div style="display:flex; flex-direction:column; gap:6px; margin-top:12px;">
+          ${registerBtnHtml}
+          ${hasTournament ? `<button class="btn card-action-btn" data-action="view-schedule" data-id="${ev.id}">📋 查看賽程</button>` : ''}
+          <button class="btn card-action-btn" data-action="view-roster" data-id="${ev.id}">查看名單 →</button>
         </div>
       </div>
     `;
