@@ -285,11 +285,13 @@
     margin-left:6px; vertical-align:middle;
   }
 
-  .bracket-wrap{ display:flex; gap:26px; overflow-x:auto; padding:6px 2px 14px; }
-  .bracket-round{ display:flex; flex-direction:column; justify-content:space-around; gap:10px; min-width:150px; flex-shrink:0; }
+  .bracket-wrap-outer{ position:relative; }
+  .bracket-wrap{ display:flex; gap:26px; overflow-x:auto; padding:6px 2px 14px; position:relative; }
+  svg.bracket-lines{ pointer-events:none; }
+  .bracket-round{ display:flex; flex-direction:column; justify-content:space-around; gap:10px; min-width:190px; flex-shrink:0; }
   .bracket-round-label{ font-family:'Oswald',sans-serif; font-size:11px; letter-spacing:1.5px; color:var(--ink-soft); text-transform:uppercase; margin-bottom:4px; }
   .bracket-match{ background:var(--panel); border:1px solid var(--line); border-radius:4px; overflow:hidden; }
-  .bracket-slot{ padding:6px 9px; font-size:12.5px; color:var(--ink); border-bottom:1px solid var(--line); }
+  .bracket-slot{ padding:6px 9px; font-size:12.5px; color:var(--ink); border-bottom:1px solid var(--line); white-space:nowrap; }
   .bracket-slot:last-child{ border-bottom:none; }
   .bracket-slot.bye{ color:var(--ink-soft); font-style:italic; }
   .bracket-slot.winner{ background:rgba(240,193,67,0.16); color:var(--lane-gold); font-weight:700; }
@@ -319,11 +321,11 @@
   .referee-match-row{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
     background:var(--panel); border:1px solid var(--line); border-radius:4px;
-    padding:12px 14px; margin-bottom:10px; max-width:400px; cursor:pointer;
+    padding:12px 14px; margin-bottom:10px; max-width:460px; cursor:pointer;
   }
   .referee-match-row:hover{ border-color:var(--lane-blue); }
   .referee-match-row.decided{ border-color:rgba(240,193,67,0.35); }
-  .referee-match-row .referee-name{ flex:1; font-size:13.5px; }
+  .referee-match-row .referee-name{ flex:1; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .referee-match-row .referee-name.winner{ color:var(--lane-gold); font-weight:700; }
   .referee-row-score{ font-family:'Oswald',sans-serif; font-size:13px; color:var(--ink-soft); padding:0 8px; white-space:nowrap; }
 
@@ -1177,6 +1179,13 @@ function setDetailTab(tab){
   });
   document.getElementById('rosterPanel').classList.toggle('hidden', tab !== 'roster');
   document.getElementById('schedulePanel').classList.toggle('hidden', tab !== 'schedule');
+  if(tab === 'schedule'){
+    // Connector lines drawn while this panel was hidden end up zero-sized;
+    // redraw now that real dimensions are available.
+    requestAnimationFrame(()=>{
+      document.querySelectorAll('#schedulePanel .bracket-wrap-outer').forEach(el=> drawBracketConnectors(el));
+    });
+  }
 }
 
 // Aggregates champion/runner-up/3rd/4th counts across every finished
@@ -2407,6 +2416,10 @@ function renderBracketPlacements(bracket, rounds){
   return `<div class="placement-wrap">${inner}</div>`;
 }
 
+function isRoundLocked(bracket, round){
+  return !!(bracket.lockedRounds && bracket.lockedRounds[round]);
+}
+
 function renderBracket(ev, containerEl, interactive){
   const bracket = ev.bracket;
   if(!containerEl) return;
@@ -2414,36 +2427,46 @@ function renderBracket(ev, containerEl, interactive){
     containerEl.innerHTML = '<p class="empty-note">尚未產生賽程</p>';
     return;
   }
+  bracket.lockedRounds = bracket.lockedRounds || {};
   const rounds = totalRounds(bracket);
-  let html = '<div class="bracket-wrap">';
+  let html = '<div class="bracket-wrap-outer"><div class="bracket-wrap">';
   for(let r=0;r<rounds;r++){
     const entrants = getRoundEntrants(bracket, r);
-    html += `<div class="bracket-round"><div class="bracket-round-label">第 ${r+1} 輪</div>`;
+    const locked = isRoundLocked(bracket, r);
+    let roundFullyDecided = true;
+    let matchesHtml = '';
     for(let i=0;i<entrants.length/2;i++){
       const a = entrants[2*i], b = entrants[2*i+1];
       const pick = bracket.picks[`${r}-${i}`];
       const sc = bracket.scores ? bracket.scores[`${r}-${i}`] : null;
-      html += `<div class="bracket-match">`;
+      if(a && b && a !== b && !pick) roundFullyDecided = false;
+      matchesHtml += `<div class="bracket-match">`;
       [a, b].forEach((name, idx)=>{
         let cls = 'bracket-slot';
         if(!name) cls += ' bye';
         if(name && pick && name === pick) cls += ' winner';
-        const clickable = interactive && a && b && a !== b;
+        const clickable = interactive && a && b && a !== b && !locked;
         if(clickable) cls += ' clickable';
         let inner;
         if(!name){
           inner = '輪空';
         } else {
           const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
-          inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+          inner = getAvatarHtml(name, 20) + escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
         }
-        html += `<div class="${cls}"${clickable ? ` data-round="${r}" data-match="${i}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
+        matchesHtml += `<div class="${cls}"${clickable ? ` data-round="${r}" data-match="${i}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
       });
-      html += `</div>`;
+      matchesHtml += `</div>`;
     }
-    html += `</div>`;
+    let lockBtnHtml = '';
+    if(interactive && roundFullyDecided){
+      lockBtnHtml = locked
+        ? `<button class="btn secondary small" data-action="unlock-round" data-round="${r}" style="padding:2px 8px; font-size:11px;">🔓 解鎖</button>`
+        : `<button class="btn gold small" data-action="lock-round" data-round="${r}" style="padding:2px 8px; font-size:11px;">🔒 鎖定此輪</button>`;
+    }
+    html += `<div class="bracket-round"><div class="bracket-round-label" style="display:flex; align-items:center; justify-content:space-between; gap:6px;"><span>第 ${r+1} 輪${locked ? ' 🔒' : ''}</span>${lockBtnHtml}</div>${matchesHtml}</div>`;
   }
-  html += '</div>';
+  html += '</div></div>';
   if(bracket.finalStage === 'roundrobin'){
     const finalists = getRoundEntrants(bracket, rounds);
     html += renderRoundRobinFinal(bracket, finalists, interactive);
@@ -2473,7 +2496,69 @@ function renderBracket(ev, containerEl, interactive){
         renderBracket(ev, containerEl, true);
       });
     });
+    containerEl.querySelectorAll('[data-action="lock-round"]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        bracket.lockedRounds[parseInt(btn.dataset.round, 10)] = true;
+        renderBracket(ev, containerEl, true);
+      });
+    });
+    containerEl.querySelectorAll('[data-action="unlock-round"]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        delete bracket.lockedRounds[parseInt(btn.dataset.round, 10)];
+        renderBracket(ev, containerEl, true);
+      });
+    });
   }
+  const wrapOuter = containerEl.querySelector('.bracket-wrap-outer');
+  if(wrapOuter) requestAnimationFrame(()=> drawBracketConnectors(wrapOuter));
+}
+
+// Draws simple SVG connector lines between each round's matches and the
+// specific next-round match their winner feeds into, so it's visually clear
+// where a win leads. Measured from actual rendered positions so it stays
+// correct regardless of avatar/score content changing each match's height.
+function drawBracketConnectors(wrapOuterEl){
+  const wrapEl = wrapOuterEl.querySelector('.bracket-wrap');
+  if(!wrapEl) return;
+  const existing = wrapEl.querySelector('svg.bracket-lines');
+  if(existing) existing.remove();
+  const rounds = Array.from(wrapEl.querySelectorAll(':scope > .bracket-round'));
+  if(rounds.length < 2) return;
+  const wrapRect = wrapEl.getBoundingClientRect();
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('class', 'bracket-lines');
+  svg.setAttribute('width', wrapEl.scrollWidth);
+  svg.setAttribute('height', wrapEl.scrollHeight);
+  svg.style.position = 'absolute';
+  svg.style.top = '0';
+  svg.style.left = '0';
+  svg.style.pointerEvents = 'none';
+
+  for(let ri=0; ri<rounds.length-1; ri++){
+    const matches = Array.from(rounds[ri].querySelectorAll(':scope > .bracket-match'));
+    const nextMatches = Array.from(rounds[ri+1].querySelectorAll(':scope > .bracket-match'));
+    for(let i=0;i<matches.length;i+=2){
+      const m1 = matches[i], m2 = matches[i+1];
+      const target = nextMatches[Math.floor(i/2)];
+      if(!m1 || !m2 || !target) continue;
+      const r1 = m1.getBoundingClientRect(), r2 = m2.getBoundingClientRect(), rt = target.getBoundingClientRect();
+      const x1 = r1.right - wrapRect.left + wrapEl.scrollLeft;
+      const y1 = r1.top + r1.height/2 - wrapRect.top + wrapEl.scrollTop;
+      const y2 = r2.top + r2.height/2 - wrapRect.top + wrapEl.scrollTop;
+      const xt = rt.left - wrapRect.left + wrapEl.scrollLeft;
+      const yt = rt.top + rt.height/2 - wrapRect.top + wrapEl.scrollTop;
+      const xMid = x1 + 14;
+      const path = document.createElementNS(svgNS, 'path');
+      const d = `M ${x1} ${y1} L ${xMid} ${y1} M ${x1} ${y2} L ${xMid} ${y2} M ${xMid} ${y1} L ${xMid} ${y2} M ${xMid} ${(y1+y2)/2} L ${xt} ${yt}`;
+      path.setAttribute('d', d);
+      path.setAttribute('stroke', 'rgba(240,193,67,0.4)');
+      path.setAttribute('stroke-width', '1.5');
+      path.setAttribute('fill', 'none');
+      svg.appendChild(path);
+    }
+  }
+  wrapEl.appendChild(svg);
 }
 
 // ---------- group stage (循環賽：小組循環 + 樹狀複賽) ----------
@@ -2873,7 +2958,7 @@ function renderDoubleElim(ev, containerEl, interactive){
         if(!name){ inner = '輪空'; }
         else {
           const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
-          inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+          inner = getAvatarHtml(name, 18) + escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
         }
         html += `<div class="${cls}"${clickable ? ` data-bracket="wb" data-round="${r}" data-match="${i}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
       });
@@ -2904,7 +2989,7 @@ function renderDoubleElim(ev, containerEl, interactive){
           if(!name){ inner = '輪空'; }
           else {
             const scoreVal = sc ? (idx===0 ? sc.a : sc.b) : null;
-            inner = escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
+            inner = getAvatarHtml(name, 18) + escapeHtml(name) + (scoreVal!=null ? `<span class="bracket-score">${scoreVal}</span>` : '');
           }
           html += `<div class="${cls}"${clickable ? ` data-bracket="lb" data-round="${lr}" data-match="${i}" data-name="${escapeAttr(name)}"` : ''}>${inner}</div>`;
         });
@@ -3002,12 +3087,12 @@ function validateBeybladeScore(scoreA, scoreB, threshold){
 }
 
 function refereeMatchRowHtml(a, b, pick, existingScore, roundIdx, matchIdx){
-  const scoreLabel = existingScore ? `${existingScore.a} : ${existingScore.b}` : '尚未登記';
+  const scoreLabel = existingScore ? `${existingScore.a} : ${existingScore.b}` : '尚未開打';
   return `
     <div class="referee-match-row${pick ? ' decided' : ''}" data-round="${roundIdx}" data-match="${matchIdx}" data-name-a="${escapeAttr(a)}" data-name-b="${escapeAttr(b)}">
-      <span class="referee-name${pick===a?' winner':''}">${getAvatarHtml(a, 22)}${escapeHtml(a)}</span>
+      <span class="referee-name${pick===a?' winner':''}">${escapeHtml(a)}</span>
       <span class="referee-row-score">${scoreLabel}</span>
-      <span class="referee-name${pick===b?' winner':''}">${getAvatarHtml(b, 22)}${escapeHtml(b)}</span>
+      <span class="referee-name${pick===b?' winner':''}">${escapeHtml(b)}</span>
     </div>
   `;
 }
@@ -3105,6 +3190,13 @@ function wireMatchRowClicks(containerEl, ev, kind){
       const matchVal = el.dataset.match;
       const nameA = el.dataset.nameA;
       const nameB = el.dataset.nameB;
+      if(kind === 'bracket' && ev.bracket && /^\d+$/.test(roundVal)){
+        const r = parseInt(roundVal, 10);
+        if(r > 0 && !isRoundLocked(ev.bracket, r - 1)){
+          showStatus('refStatusMsg', `第 ${r} 輪尚未鎖定，請先請後台管理員鎖定第 ${r} 輪，再繼續登記第 ${r+1} 輪。`, true);
+          return;
+        }
+      }
       const existing = getExistingScore(ev, kind, roundVal, matchVal);
       openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existing);
     });
