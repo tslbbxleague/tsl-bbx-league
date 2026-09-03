@@ -443,7 +443,7 @@
       <span class="sub">賽事一覽</span>
     </div>
   </div>
-  <nav>
+  <nav style="display:none;">
     <button id="leaderboardBtn">🏆 戰績榜</button>
     <button id="refereeBtn">🏁 裁判登錄</button>
     <button id="toAdminBtn">後台管理</button>
@@ -545,10 +545,23 @@
     <h2 style="font-size:20px;">選手戰績榜</h2>
     <span class="date num" style="font-size:12px;">僅計算已鎖定的個人賽・冠軍10分／亞軍5分／季軍3分／殿軍1分</span>
   </div>
-  <div class="search">
-    <input id="leaderboardSearchInput" type="text" placeholder="搜尋暱稱…">
+  <div class="type-select-row" id="leaderboardTabRow" style="margin-bottom:16px;">
+    <label class="event-tab active" data-lb-tab="ranking" style="cursor:pointer;">戰績排行</label>
+    <label class="event-tab" data-lb-tab="lookup" style="cursor:pointer;">選手查詢</label>
   </div>
-  <div id="leaderboardWrap"></div>
+  <div id="leaderboardRankingPanel">
+    <div class="search">
+      <input id="leaderboardSearchInput" type="text" placeholder="搜尋暱稱…">
+    </div>
+    <div id="leaderboardWrap"></div>
+  </div>
+  <div id="playerLookupPanel" class="hidden">
+    <p class="empty-note" style="margin-bottom:10px;">輸入自己的暱稱，查看你參加過的每一場賽事跟成績（就算沒拿過名次也查得到）。</p>
+    <div class="search">
+      <input id="playerLookupInput" type="text" placeholder="輸入暱稱…">
+    </div>
+    <div id="playerLookupWrap"></div>
+  </div>
 </main>
 
 <!-- ADMIN GATE -->
@@ -682,18 +695,18 @@
   <div class="event-title-block">
     <h2 style="font-size:18px;">戰績榜暱稱合併</h2>
   </div>
-  <p class="empty-note" style="margin-bottom:14px;">如果同一個人在不同賽事被打成不同的暱稱（例如 sam、sam1），可以在這裡設定合併規則，戰績榜計算時會自動把它們算成同一人。這不會改動各場賽事本身的名單顯示，只影響戰績榜的統計。</p>
+  <p class="empty-note" style="margin-bottom:14px;">如果同一個人在不同賽事被打成不同的暱稱（例如 sam、Sam1、SAM_2），可以在這裡一次把好幾個暱稱都歸到同一個正確暱稱底下。比對暱稱時不分大小寫。這不會改動各場賽事本身的名單顯示，只影響戰績榜的統計。</p>
   <div class="cols admin-list-editor">
     <div class="col">
-      <label class="field-label">重複的暱稱（例如 sam1）</label>
-      <input type="text" class="roster-input" id="aliasFromInput" placeholder="輸入要合併掉的暱稱">
+      <label class="field-label">要合併掉的暱稱（每行一個，可以一次貼多個）</label>
+      <textarea class="roster-input" id="aliasFromInput" style="min-height:90px;" placeholder="sam1&#10;Sam2&#10;SAM_3"></textarea>
     </div>
     <div class="col">
-      <label class="field-label">要合併成的正確暱稱（例如 sam）</label>
+      <label class="field-label">要合併成的正確暱稱</label>
       <input type="text" class="roster-input" id="aliasToInput" placeholder="輸入正確的暱稱">
     </div>
   </div>
-  <button class="btn gold small" id="addAliasBtn">＋ 新增合併規則</button>
+  <button class="btn gold small" id="addAliasBtn">＋ 加入這批合併規則</button>
   <div id="aliasListWrap" style="margin-top:16px;"></div>
   <div class="save-bar">
     <span class="status-msg" id="statusMsgAlias"></span>
@@ -1221,13 +1234,20 @@ function setDetailTab(tab){
 // team names, not individual nicknames.
 const PLACEMENT_POINTS = { champion:10, runnerUp:5, third:3, fourth:1 };
 
+function normalizeNameKey(name){
+  return (name || '').trim().toLowerCase();
+}
+
 function resolveNameAlias(name){
   if(!name) return name;
   const aliases = state.nameAliases || {};
   let resolved = name;
   let guard = 0;
-  while(aliases[resolved] && aliases[resolved] !== resolved && guard < 10){
-    resolved = aliases[resolved];
+  while(guard < 10){
+    const key = normalizeNameKey(resolved);
+    const next = (aliases[key] !== undefined) ? aliases[key] : aliases[resolved];
+    if(!next || next === resolved) break;
+    resolved = next;
     guard++;
   }
   return resolved;
@@ -1257,6 +1277,81 @@ function computeLeaderboard(){
   return Object.values(board).sort((a,b)=>
     b.points - a.points || b.champion - a.champion || b.runnerUp - a.runnerUp || b.third - a.third || b.fourth - a.fourth
   );
+}
+
+// Every distinct individual-event nickname that's ever appeared anywhere,
+// resolved through aliases — used to power self-service lookup even for
+// people who've never placed in the leaderboard.
+function getAllKnownPlayerNames(){
+  const names = new Set();
+  state.events.forEach(ev=>{
+    if(ev.type !== 'individual') return;
+    (ev.individualMain || []).forEach(n=> names.add(resolveNameAlias(n)));
+    (ev.individualBackup || []).forEach(n=> names.add(resolveNameAlias(n)));
+  });
+  return Array.from(names);
+}
+
+// Full participation history for one resolved player name: every individual
+// event they were on the roster for, with their placement (if any) and the
+// event's current status.
+function computePlayerHistory(rawName){
+  const resolved = resolveNameAlias(rawName);
+  const events = [];
+  state.events.forEach(ev=>{
+    if(ev.type !== 'individual') return;
+    const onRoster = (ev.individualMain || []).some(n=> resolveNameAlias(n) === resolved) ||
+                      (ev.individualBackup || []).some(n=> resolveNameAlias(n) === resolved);
+    if(!onRoster) return;
+    let placement = null;
+    if(ev.locked && ev.countsForLeaderboard !== false){
+      const podium = getEventPodium(ev);
+      if(podium){
+        if(resolveNameAlias(podium.champion) === resolved) placement = '🏆 冠軍';
+        else if(podium.runnerUp && resolveNameAlias(podium.runnerUp) === resolved) placement = '🥈 亞軍';
+        else if(podium.third && podium.third.some(n=> resolveNameAlias(n) === resolved)) placement = '🥉 季軍';
+        else if(podium.fourth && resolveNameAlias(podium.fourth) === resolved) placement = '4️⃣ 殿軍';
+      }
+    }
+    let status;
+    if(ev.locked) status = '🏁 已結束';
+    else if(ev.started) status = isTournamentFinished(ev) ? '比賽結束（尚未鎖定）' : '🔴 進行中';
+    else status = '尚未開始';
+    events.push({ name: ev.name, date: ev.date, placement, status });
+  });
+  events.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+  return events;
+}
+
+function renderPlayerLookup(query){
+  const wrap = document.getElementById('playerLookupWrap');
+  const q = (query || '').trim();
+  if(!q){
+    wrap.innerHTML = '';
+    return;
+  }
+  const resolved = resolveNameAlias(q);
+  const known = getAllKnownPlayerNames();
+  const matches = known.filter(n=> normalizeNameKey(n).includes(normalizeNameKey(q)) || n === resolved);
+  if(matches.length === 0){
+    wrap.innerHTML = '<p class="empty-note">查無這個暱稱的參賽紀錄。</p>';
+    return;
+  }
+  wrap.innerHTML = matches.map(name=>{
+    const history = computePlayerHistory(name);
+    const board = computeLeaderboard().find(b=> b.name === name);
+    const summary = board
+      ? `${board.points} 分　${board.champion ? `🏆×${board.champion} ` : ''}${board.runnerUp ? `🥈×${board.runnerUp} ` : ''}${board.third ? `🥉×${board.third} ` : ''}${board.fourth ? `4️⃣×${board.fourth}` : ''}`
+      : '尚未有已鎖定賽事的名次紀錄';
+    const rows = history.length
+      ? history.map(h=> `<div class="empty-note" style="margin:4px 0; padding-bottom:6px; border-bottom:1px solid var(--line);"><strong style="color:var(--ink);">${escapeHtml(h.name)}</strong>　${fmtDate(h.date)}　${h.status}${h.placement ? `　${h.placement}` : ''}</div>`).join('')
+      : '<p class="empty-note">目前沒有查到參加過的個人賽。</p>';
+    return `<div class="event-card" style="cursor:default; flex-direction:column; align-items:stretch;">
+      <p class="ev-name">${getAvatarHtml(name, 26)}${escapeHtml(name)}</p>
+      <p class="ev-meta" style="color:var(--lane-gold);">${summary}</p>
+      <div style="margin-top:8px;">${rows}</div>
+    </div>`;
+  }).join('');
 }
 
 function renderLeaderboard(filter){
@@ -1303,6 +1398,11 @@ function showLeaderboard(){
   document.getElementById('leaderboardView').classList.remove('hidden');
   document.getElementById('leaderboardSearchInput').value = '';
   renderLeaderboard('');
+  document.querySelectorAll('#leaderboardTabRow .event-tab').forEach(t=> t.classList.toggle('active', t.dataset.lbTab === 'ranking'));
+  document.getElementById('leaderboardRankingPanel').classList.remove('hidden');
+  document.getElementById('playerLookupPanel').classList.add('hidden');
+  document.getElementById('playerLookupInput').value = '';
+  document.getElementById('playerLookupWrap').innerHTML = '';
 }
 
 function openEventDetailAndRegister(id){
@@ -1560,22 +1660,30 @@ function showEventList(){
 function renderAliasAdmin(){
   editingState.nameAliases = editingState.nameAliases || {};
   const wrap = document.getElementById('aliasListWrap');
-  const entries = Object.entries(editingState.nameAliases);
+  const entries = Object.entries(editingState.nameAliases); // normalizedKey -> canonical display name
   if(entries.length === 0){
     wrap.innerHTML = '<p class="empty-note">目前還沒有設定任何合併規則。</p>';
     return;
   }
-  wrap.innerHTML = entries.map(([from, to])=>`
+  const groups = {};
+  entries.forEach(([fromKey, to])=>{
+    if(!groups[to]) groups[to] = [];
+    groups[to].push(fromKey);
+  });
+  wrap.innerHTML = Object.entries(groups).map(([to, froms])=>`
     <div class="admin-team">
-      <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:0;">
-        <div>${escapeHtml(from)} → <strong>${escapeHtml(to)}</strong></div>
-        <button class="btn danger small" data-action="delete-alias" data-from="${escapeAttr(from)}">刪除</button>
+      <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:0;">
+        <div><strong>${escapeHtml(to)}</strong>　←　${froms.map(escapeHtml).join('、')}</div>
+        <button class="btn danger small" data-action="delete-alias-group" data-to="${escapeAttr(to)}">刪除整組</button>
       </div>
     </div>
   `).join('');
-  wrap.querySelectorAll('[data-action="delete-alias"]').forEach(btn=>{
+  wrap.querySelectorAll('[data-action="delete-alias-group"]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      delete editingState.nameAliases[btn.dataset.from];
+      const to = btn.dataset.to;
+      Object.keys(editingState.nameAliases).forEach(k=>{
+        if(editingState.nameAliases[k] === to) delete editingState.nameAliases[k];
+      });
       renderAliasAdmin();
     });
   });
@@ -1594,11 +1702,14 @@ document.getElementById('backFromAlias').addEventListener('click', ()=>{
 document.getElementById('addAliasBtn').addEventListener('click', ()=>{
   const fromInput = document.getElementById('aliasFromInput');
   const toInput = document.getElementById('aliasToInput');
-  const from = fromInput.value.trim();
+  const froms = fromInput.value.split('\n').map(s=>s.trim()).filter(Boolean);
   const to = toInput.value.trim();
-  if(!from || !to || from === to) return;
+  if(froms.length === 0 || !to) return;
   editingState.nameAliases = editingState.nameAliases || {};
-  editingState.nameAliases[from] = to;
+  froms.forEach(from=>{
+    const key = normalizeNameKey(from);
+    if(key && key !== normalizeNameKey(to)) editingState.nameAliases[key] = to;
+  });
   fromInput.value = '';
   toInput.value = '';
   renderAliasAdmin();
@@ -4383,6 +4494,17 @@ document.getElementById('leaderboardBtn').addEventListener('click', showLeaderbo
 document.getElementById('backFromLeaderboard').addEventListener('click', showPublic);
 document.getElementById('leaderboardSearchInput').addEventListener('input', e=>{
   renderLeaderboard(e.target.value);
+});
+document.querySelectorAll('#leaderboardTabRow .event-tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    const target = tab.dataset.lbTab;
+    document.querySelectorAll('#leaderboardTabRow .event-tab').forEach(t=> t.classList.toggle('active', t === tab));
+    document.getElementById('leaderboardRankingPanel').classList.toggle('hidden', target !== 'ranking');
+    document.getElementById('playerLookupPanel').classList.toggle('hidden', target !== 'lookup');
+  });
+});
+document.getElementById('playerLookupInput').addEventListener('input', e=>{
+  renderPlayerLookup(e.target.value);
 });
 document.getElementById('backFromGate').addEventListener('click', showPublic);
 document.getElementById('backFromRefGate').addEventListener('click', showPublic);
