@@ -54,6 +54,16 @@
     transition:color .15s ease;
   }
   #bottomNav .bottom-nav-icon{ font-size:18px; line-height:1; }
+  #bottomNav .bottom-nav-btn-mid{
+    position:relative; margin-top:-14px;
+  }
+  #bottomNav .bottom-nav-btn-mid .bottom-nav-icon{
+    font-size:26px; background:linear-gradient(145deg, var(--lane-gold), #b8862f);
+    width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(240,193,67,0.5), 0 0 0 4px #0F0D08;
+    margin-bottom:2px;
+  }
+  #bottomNav .bottom-nav-btn-mid span:last-child{ color:var(--lane-gold); font-weight:700; }
   #bottomNav .bottom-nav-btn.active{ color:var(--lane-gold); }
   #bottomNav .bottom-nav-btn:active{ opacity:0.7; }
   #bottomNavAdminMenu{
@@ -311,14 +321,15 @@
   .checkin-chip.checked .checkbox::after{ content:'✓'; }
   .checkin-chip .name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-  .lottery-result{
-    margin-top:16px; min-height:44px; padding:20px; text-align:center; border-radius:6px;
-    background:var(--panel); border:2px dashed var(--lane-gold);
-    font-family:'Oswald',sans-serif; font-size:26px; font-weight:700; color:var(--lane-gold);
-    display:flex; align-items:center; justify-content:center;
+  .slot-machine{
+    background:var(--panel); border:2px solid var(--lane-gold); border-radius:10px; padding:22px;
+    margin-top:14px; box-shadow:0 0 24px rgba(240,193,67,0.18);
   }
-  .lottery-result.lottery-spinning{ animation:lottery-pulse 0.15s ease-in-out infinite; color:var(--ink); border-style:solid; }
-  @keyframes lottery-pulse{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.04); } }
+  .slot-reels{ display:flex; gap:10px; justify-content:center; }
+  .slot-reel{
+    width:72px; height:72px; background:#050506; border:2px solid rgba(240,193,67,0.4); border-radius:8px;
+    display:flex; align-items:center; justify-content:center; font-size:34px;
+  }
 
   .checkin-check{
     display:inline-flex; align-items:center; justify-content:center;
@@ -563,6 +574,17 @@
 <footer class="pagefoot" id="publicFooter">最後更新時間：—</footer>
 
 <!-- LEADERBOARD -->
+<main class="hidden" id="slotGameView">
+  <div class="crumbs">
+    <button id="backFromSlotGame">← 賽事一覽</button>
+  </div>
+  <div class="event-title-block">
+    <h2 style="font-size:20px;">🎰 拉霸機</h2>
+    <span class="date num" id="slotGameSubtitle" style="font-size:12px;"></span>
+  </div>
+  <div id="slotGameBody"></div>
+</main>
+
 <main class="hidden" id="leaderboardView">
   <div class="crumbs">
     <button id="backFromLeaderboard">← 賽事一覽</button>
@@ -699,6 +721,7 @@
     <div style="display:flex; gap:8px;">
       <button class="btn secondary" id="openAliasBtn">🔗 戰績榜暱稱合併</button>
       <button class="btn secondary" id="openAvatarBtn">👤 選手資料設定</button>
+      <button class="btn secondary" id="openSlotGameAdminBtn">🎰 拉霸機設定</button>
       <button class="btn gold" id="addEventBtn">＋ 新增賽事</button>
     </div>
   </div>
@@ -766,6 +789,44 @@
     <span class="status-msg" id="statusMsgAvatar"></span>
     <button class="btn" id="saveAvatarBtn">儲存變更</button>
   </div>
+</div>
+
+<!-- ADMIN: slot machine game settings -->
+<div class="admin-wrap hidden" id="adminSlotGameView">
+  <div class="admin-toolbar">
+    <button class="btn secondary" id="backFromSlotGameAdmin">← 返回賽事列表</button>
+  </div>
+  <div class="event-title-block">
+    <h2 style="font-size:18px;">🎰 拉霸機設定</h2>
+  </div>
+  <p class="empty-note" style="margin-bottom:14px;">選一場賽事的正取名單當作「代表身分」清單，任何人都能在拉霸機頁面（底部導覽列中間那顆按鈕）挑一個名字代表自己來拉。中獎與否是機率決定，跟選了誰無關；獎品總數用完後，之後的人都不會再中獎。</p>
+  <div class="cols admin-list-editor">
+    <div class="col">
+      <label class="field-label">代表身分來源賽事</label>
+      <select class="roster-input" id="slotGameEventSelect"><option value="">－ 尚未選擇 －</option></select>
+    </div>
+    <div class="col">
+      <label class="field-label">獎品名稱</label>
+      <input type="text" class="roster-input" id="slotGamePrizeInput" placeholder="例如：戰鬥陀螺一組">
+    </div>
+  </div>
+  <div class="cols admin-list-editor">
+    <div class="col">
+      <label class="field-label">獎品總數量</label>
+      <input type="number" class="roster-input" id="slotGamePrizeCountInput" min="0" placeholder="例如：2">
+    </div>
+    <div class="col">
+      <label class="field-label">每次拉霸中獎機率（%）</label>
+      <input type="number" class="roster-input" id="slotGameProbInput" min="1" max="100" placeholder="例如：10">
+    </div>
+  </div>
+  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    <button class="btn gold small" id="saveSlotGameConfigBtn">儲存設定並開放遊戲</button>
+    <button class="btn secondary small" id="resetSlotGameBtn">🔄 重設遊戲（清空紀錄、恢復獎品數量）</button>
+  </div>
+  <p class="referee-error" id="slotGameAdminError"></p>
+  <p class="empty-note" id="slotGameStatusText" style="margin-top:14px;"></p>
+  <div id="slotGamePlayLogWrap" style="margin-top:10px;"></div>
 </div>
 
 <!-- ADMIN: ROSTER EDITOR FOR ONE EVENT -->
@@ -840,36 +901,6 @@
   </div>
 
   <!-- lottery draw -->
-  <div class="admin-subsection" id="lotteryAdminSection">
-    <div class="sub-head">
-      <h4>🎉 抽獎系統</h4>
-    </div>
-    <div class="cols admin-list-editor">
-      <div class="col">
-        <label class="field-label">抽獎範圍</label>
-        <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-bottom:6px;">
-          <input type="radio" name="lotteryPool" value="all" checked> 全部正取名單
-        </label>
-        <label style="display:flex; align-items:center; gap:6px; font-size:13px;">
-          <input type="radio" name="lotteryPool" value="checkedin"> 只抽已點名到場的人
-        </label>
-      </div>
-      <div class="col">
-        <label class="field-label">獎品名稱（選填）</label>
-        <input type="text" class="roster-input" id="lotteryPrizeInput" placeholder="例如：戰鬥陀螺一組">
-      </div>
-    </div>
-    <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin:4px 0 12px;">
-      <input type="checkbox" id="lotteryExcludeWinners" checked> 已中獎者不再重複抽中
-    </label>
-    <div style="display:flex; gap:10px; flex-wrap:wrap;">
-      <button class="btn gold small" id="startLotteryBtn">🎉 開始抽獎</button>
-      <button class="btn secondary small" id="clearLotteryBtn">清空得獎名單</button>
-    </div>
-    <div id="lotteryResultDisplay" class="lottery-result"></div>
-    <div id="lotteryWinnersListWrap" style="margin-top:14px;"></div>
-  </div>
-
   <!-- shared bracket / swiss setup for both individual and team events -->
   <div class="admin-subsection" id="bracketAdminSection">
     <div class="sub-head">
@@ -961,6 +992,7 @@
 <nav id="bottomNav" class="hidden">
   <button class="bottom-nav-btn" data-nav="ongoing"><span class="bottom-nav-icon">🔴</span><span>進行中</span></button>
   <button class="bottom-nav-btn" data-nav="ended"><span class="bottom-nav-icon">🏁</span><span>過去比賽</span></button>
+  <button class="bottom-nav-btn bottom-nav-btn-mid" data-nav="slotgame"><span class="bottom-nav-icon">🎰</span><span>拉霸機</span></button>
   <button class="bottom-nav-btn" data-nav="leaderboard"><span class="bottom-nav-icon">🏆</span><span>榮譽榜</span></button>
   <button class="bottom-nav-btn" data-nav="admin-menu"><span class="bottom-nav-icon">⚙️</span><span>裁判／後台</span></button>
 </nav>
@@ -1015,6 +1047,7 @@ async function loadData(){
       state.nameAliases = state.nameAliases || {};
       state.playerAvatars = state.playerAvatars || {};
       state.activeMatches = state.activeMatches || [];
+      state.lotteryGame = state.lotteryGame || { eventId:null, prizeName:'', prizeCount:0, winProbability:10, winnersRemaining:0, gameId:null, plays:[] };
     } else {
       state = seedData();
       const { error: insertError } = await sb
@@ -1086,12 +1119,13 @@ function seedData(){
     nameAliases: {},
     playerAvatars: {},
     activeMatches: [],
+    lotteryGame: { eventId:null, prizeName:'', prizeCount:0, winProbability:10, winnersRemaining:0, gameId:null, plays:[] },
     events: [
       {
         id: cryptoId(), name:"個人賽", date:"2026-07-17", type:"individual",
         individualMain:["王小明","陳曉華","林志豪","黃美玲"],
         individualBackup:["張家豪","李佳穎"],
-        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, lottery:{poolMode:'all', excludeWinners:true, winners:[]}, winThreshold:4
+        mainTeams:[], backupTeams:[], started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, winThreshold:4
       },
       {
         id: cryptoId(), name:"王牌團體賽", date:"2026-07-24", type:"team",
@@ -1103,7 +1137,7 @@ function seedData(){
         backupTeams:[
           { id: cryptoId(), name:"C隊", members:["張惠妹","周杰倫"] }
         ],
-        started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, lottery:{poolMode:'all', excludeWinners:true, winners:[]}, winThreshold:4
+        started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, winThreshold:4
       }
     ]
   };
@@ -1419,6 +1453,146 @@ function renderLeaderboard(filter){
   });
 }
 
+const SLOT_SYMBOLS = ['🌀','⚡','🔥','💥','⭐','🏆'];
+
+function showSlotGameView(){
+  hideAllViews();
+  document.getElementById('slotGameView').classList.remove('hidden');
+  renderSlotGameBody();
+}
+
+function randomLosingSymbols(){
+  let arr;
+  do{
+    arr = [0,1,2].map(()=> SLOT_SYMBOLS[Math.floor(Math.random()*SLOT_SYMBOLS.length)]);
+  }while(arr[0]===arr[1] && arr[1]===arr[2]);
+  return arr;
+}
+
+function renderSlotGameBody(){
+  const game = state.lotteryGame;
+  const wrap = document.getElementById('slotGameBody');
+  const subtitle = document.getElementById('slotGameSubtitle');
+  if(!game || !game.eventId || !game.gameId){
+    subtitle.textContent = '';
+    wrap.innerHTML = '<p class="empty-note">拉霸機遊戲尚未開放，請洽主辦方。</p>';
+    return;
+  }
+  const ev = state.events.find(e=>e.id===game.eventId);
+  const roster = ev ? getEntrantNames(ev) : [];
+  subtitle.textContent = `獎品：${game.prizeName || '神秘獎品'}　剩餘名額 ${game.winnersRemaining} / ${game.prizeCount}`;
+
+  const playedKey = 'slotPlayed_' + game.gameId;
+  let alreadyPlayed = null;
+  try{ alreadyPlayed = JSON.parse(localStorage.getItem(playedKey)); }catch(e){ alreadyPlayed = null; }
+
+  if(alreadyPlayed){
+    wrap.innerHTML = `
+      <div class="slot-machine">
+        <div class="slot-reels">
+          <div class="slot-reel">${alreadyPlayed.symbols[0]}</div>
+          <div class="slot-reel">${alreadyPlayed.symbols[1]}</div>
+          <div class="slot-reel">${alreadyPlayed.symbols[2]}</div>
+        </div>
+      </div>
+      <p style="text-align:center; font-size:16px; font-weight:700; margin-top:14px; color:${alreadyPlayed.won?'var(--lane-gold)':'var(--ink-soft)'};">
+        ${alreadyPlayed.won ? `🎉 恭喜中獎！代表：${escapeHtml(alreadyPlayed.name)}` : `😢 銘謝惠顧，代表：${escapeHtml(alreadyPlayed.name)}`}
+      </p>
+      <p class="empty-note" style="text-align:center; margin-top:6px;">這台手機這一場遊戲已經玩過囉。</p>
+    `;
+    return;
+  }
+  if(game.winnersRemaining <= 0 && game.prizeCount > 0){
+    wrap.innerHTML = '<p class="empty-note">獎品已經全部送完了，謝謝參加！</p>';
+    return;
+  }
+  if(roster.length === 0){
+    wrap.innerHTML = '<p class="empty-note">這場賽事目前還沒有正取名單。</p>';
+    return;
+  }
+  wrap.innerHTML = `
+    <div class="search">
+      <select id="slotGameNameSelect" class="roster-input">
+        <option value="">選一個名字代表你自己…</option>
+        ${roster.map(n=>`<option value="${escapeAttr(n)}">${escapeHtml(n)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="slot-machine">
+      <div class="slot-reels" id="slotReels">
+        <div class="slot-reel">❓</div>
+        <div class="slot-reel">❓</div>
+        <div class="slot-reel">❓</div>
+      </div>
+    </div>
+    <button class="btn gold" id="slotPullBtn" style="width:100%; padding:14px; font-size:16px; margin-top:14px;" disabled>🎰 拉霸！</button>
+    <p class="referee-error" id="slotGameError"></p>
+  `;
+  const select = document.getElementById('slotGameNameSelect');
+  const pullBtn = document.getElementById('slotPullBtn');
+  select.addEventListener('change', ()=>{ pullBtn.disabled = !select.value; });
+  pullBtn.addEventListener('click', ()=> playSlotGame(select.value));
+}
+
+function animateSlotReels(finalSymbols, won, name){
+  const reels = document.querySelectorAll('#slotReels .slot-reel');
+  let ticks = 0;
+  const maxTicks = 20;
+  const interval = setInterval(()=>{
+    reels.forEach((r, i)=>{
+      if(ticks < maxTicks - (i*3)){
+        r.textContent = SLOT_SYMBOLS[Math.floor(Math.random()*SLOT_SYMBOLS.length)];
+      } else {
+        r.textContent = finalSymbols[i];
+      }
+    });
+    ticks++;
+    if(ticks > maxTicks){
+      clearInterval(interval);
+      const resultP = document.createElement('p');
+      resultP.style.cssText = 'text-align:center; font-size:16px; font-weight:700; margin-top:14px;';
+      resultP.style.color = won ? 'var(--lane-gold)' : 'var(--ink-soft)';
+      resultP.textContent = won ? `🎉 恭喜中獎！代表：${name}` : `😢 銘謝惠顧，代表：${name}`;
+      const body = document.getElementById('slotGameBody');
+      if(body) body.appendChild(resultP);
+      const pullBtn = document.getElementById('slotPullBtn');
+      if(pullBtn) pullBtn.remove();
+      const select = document.getElementById('slotGameNameSelect');
+      if(select && select.closest('.search')) select.closest('.search').remove();
+    }
+  }, 90);
+}
+
+async function playSlotGame(name){
+  if(!name) return;
+  const pullBtn = document.getElementById('slotPullBtn');
+  const errEl = document.getElementById('slotGameError');
+  errEl.style.display = 'none';
+  pullBtn.disabled = true;
+  try{
+    const { data, error } = await sb.from('roster_data').select('value').eq('key', STORAGE_KEY).maybeSingle();
+    if(error) throw error;
+    const freshState = (data && data.value) ? data.value : JSON.parse(JSON.stringify(state));
+    const game = freshState.lotteryGame;
+    if(!game || !game.gameId) throw new Error('game not configured');
+    let won = false;
+    if(game.winnersRemaining > 0){
+      won = Math.random() * 100 < (game.winProbability || 10);
+      if(won) game.winnersRemaining -= 1;
+    }
+    game.plays = game.plays || [];
+    game.plays.push({ name, won, at: new Date().toISOString() });
+    await persist(freshState);
+    state = freshState;
+    const symbols = won ? ['🏆','🏆','🏆'] : randomLosingSymbols();
+    localStorage.setItem('slotPlayed_' + game.gameId, JSON.stringify({ name, won, symbols }));
+    animateSlotReels(symbols, won, name);
+  }catch(e){
+    errEl.textContent = '拉霸失敗，請檢查網路後再試一次。';
+    errEl.style.display = 'block';
+    pullBtn.disabled = false;
+  }
+}
+
 function showLeaderboard(){
   hideAllViews();
   document.getElementById('leaderboardView').classList.remove('hidden');
@@ -1611,16 +1785,6 @@ function renderRosterDisplay(ev, filter){
     else if(ev.bracket) renderBracket(ev, target, false);
   }
 
-  function lotteryResultsHtml(){
-    const winners = (ev.lottery && ev.lottery.winners) || [];
-    if(winners.length === 0) return '';
-    const chips = winners.map(w=>`<span class="backup-chip" style="border-color:var(--lane-gold); color:var(--lane-gold);">🎁 ${escapeHtml(w.name)}${w.prize ? `：${escapeHtml(w.prize)}` : ''}</span>`).join('');
-    return `<div class="section-block">
-      <p class="section-title main"><span class="dot"></span>🎉 抽獎結果</p>
-      <div class="backup-list">${chips}</div>
-    </div>`;
-  }
-
   if(ev.type === 'individual'){
     const main = ev.individualMain.filter(n=>!q || n.toLowerCase().includes(q));
     const backup = ev.individualBackup.filter(n=>!q || n.toLowerCase().includes(q));
@@ -1637,7 +1801,6 @@ function renderRosterDisplay(ev, filter){
         <p class="section-title backup"><span class="dot"></span>備取名單（${backup.length}）</p>
         <div class="backup-list">${backupChips || '<span class="empty-note">尚無備取名單</span>'}</div>
       </div>
-      ${lotteryResultsHtml()}
     `;
     renderScheduleSection();
     return;
@@ -1676,7 +1839,7 @@ function renderRosterDisplay(ev, filter){
       <p class="section-title backup"><span class="dot"></span>備取隊伍（${backupTeams.length}）</p>
       ${backupTeams.length ? backupTeams.map((t,i)=>teamCardHtml(t,i,true)).join('') : '<p class="empty-note">尚無備取隊伍</p>'}
     </div>
-    ${lotteryResultsHtml()}`;
+    `;
   renderScheduleSection();
 }
 
@@ -1789,6 +1952,95 @@ function getAvatarHtml(name, size){
   if(!url) return '';
   return `<img src="${url}" class="player-avatar" style="width:${size}px; height:${size}px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:6px; border:1px solid var(--line);">`;
 }
+
+// ---------- slot machine game (admin config) ----------
+function renderSlotGameAdmin(){
+  editingState.lotteryGame = editingState.lotteryGame || { eventId:null, prizeName:'', prizeCount:0, winProbability:10, winnersRemaining:0, gameId:null, plays:[] };
+  const game = editingState.lotteryGame;
+  const sel = document.getElementById('slotGameEventSelect');
+  const individualEvents = editingState.events.filter(e=> e.type === 'individual');
+  sel.innerHTML = '<option value="">－ 尚未選擇 －</option>' + individualEvents.map(e=>
+    `<option value="${e.id}" ${game.eventId===e.id?'selected':''}>${escapeHtml(e.name)}</option>`
+  ).join('');
+  document.getElementById('slotGamePrizeInput').value = game.prizeName || '';
+  document.getElementById('slotGamePrizeCountInput').value = game.prizeCount || 0;
+  document.getElementById('slotGameProbInput').value = game.winProbability || 10;
+  document.getElementById('slotGameAdminError').style.display = 'none';
+  const statusEl = document.getElementById('slotGameStatusText');
+  if(!game.eventId || !game.gameId){
+    statusEl.textContent = '目前遊戲尚未開放（還沒儲存設定）。';
+  } else {
+    statusEl.textContent = `目前狀態：剩餘 ${game.winnersRemaining} / ${game.prizeCount} 個獎品，已經有 ${game.plays.length} 人玩過。`;
+  }
+  const logWrap = document.getElementById('slotGamePlayLogWrap');
+  if(!game.plays || game.plays.length === 0){
+    logWrap.innerHTML = '';
+  } else {
+    logWrap.innerHTML = '<p class="empty-note" style="margin-bottom:6px;">遊玩紀錄（最新在上面）</p>' +
+      game.plays.slice().reverse().slice(0, 50).map(p=>
+        `<div class="empty-note" style="padding:4px 0; border-bottom:1px solid var(--line);">${p.won?'🎉':'　　'} ${escapeHtml(p.name)}　${new Date(p.at).toLocaleString('zh-TW')}${p.won?'　中獎！':''}</div>`
+      ).join('');
+  }
+}
+
+document.getElementById('openSlotGameAdminBtn').addEventListener('click', ()=>{
+  renderSlotGameAdmin();
+  document.getElementById('adminEventList').classList.add('hidden');
+  document.getElementById('adminSlotGameView').classList.remove('hidden');
+});
+document.getElementById('backFromSlotGameAdmin').addEventListener('click', ()=>{
+  document.getElementById('adminSlotGameView').classList.add('hidden');
+  document.getElementById('adminEventList').classList.remove('hidden');
+  renderAdminEventList();
+});
+document.getElementById('saveSlotGameConfigBtn').addEventListener('click', async ()=>{
+  const errEl = document.getElementById('slotGameAdminError');
+  errEl.style.display = 'none';
+  const eventId = document.getElementById('slotGameEventSelect').value;
+  const prizeName = document.getElementById('slotGamePrizeInput').value.trim();
+  const prizeCount = parseInt(document.getElementById('slotGamePrizeCountInput').value, 10) || 0;
+  const winProbability = parseInt(document.getElementById('slotGameProbInput').value, 10) || 10;
+  if(!eventId){
+    errEl.textContent = '請選擇一場賽事作為代表身分來源。';
+    errEl.style.display = 'block';
+    return;
+  }
+  editingState.lotteryGame = {
+    eventId, prizeName, prizeCount, winProbability,
+    winnersRemaining: prizeCount, gameId: cryptoId(), plays: []
+  };
+  try{
+    await persist(editingState);
+    renderSlotGameAdmin();
+    errEl.style.display = 'none';
+  }catch(e){
+    errEl.textContent = '儲存失敗，請稍後再試。';
+    errEl.style.display = 'block';
+  }
+});
+document.getElementById('resetSlotGameBtn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('resetSlotGameBtn');
+  if(btn.dataset.confirming !== 'true'){
+    btn.dataset.confirming = 'true';
+    btn.textContent = '再按一次確認重設';
+    setTimeout(()=>{ if(btn.isConnected){ btn.dataset.confirming='false'; btn.textContent='🔄 重設遊戲（清空紀錄、恢復獎品數量）'; } }, 3000);
+    return;
+  }
+  btn.dataset.confirming = 'false';
+  btn.textContent = '🔄 重設遊戲（清空紀錄、恢復獎品數量）';
+  const game = editingState.lotteryGame;
+  if(!game || !game.eventId) return;
+  game.winnersRemaining = game.prizeCount;
+  game.gameId = cryptoId();
+  game.plays = [];
+  try{
+    await persist(editingState);
+    renderSlotGameAdmin();
+  }catch(e){
+    document.getElementById('slotGameAdminError').textContent = '重設失敗，請稍後再試。';
+    document.getElementById('slotGameAdminError').style.display = 'block';
+  }
+});
 
 function renderAvatarAdmin(){
   editingState.playerAvatars = editingState.playerAvatars || {};
@@ -1971,7 +2223,7 @@ function openRosterEditor(eventId, mode){
   chip.textContent = typeLabel(ev.type);
   chip.className = 'type-chip ' + (ev.type==='team' ? 'team' : 'individual');
 
-  const rosterSections = ['descriptionAdminSection','registrationAdminSection','individualEditor','teamEditor','checkinAdminSection','lotteryAdminSection'];
+  const rosterSections = ['descriptionAdminSection','registrationAdminSection','individualEditor','teamEditor','checkinAdminSection'];
   const formatSections = ['bracketAdminSection'];
   const showRoster = mode !== 'format';
   rosterSections.forEach(id=> document.getElementById(id).classList.toggle('hidden', !showRoster));
@@ -1992,7 +2244,6 @@ function openRosterEditor(eventId, mode){
     }
     renderCheckinSection(ev);
     renderRegistrationAdminSection(ev);
-    renderLotteryAdminSection(ev);
   } else {
     renderBracketAdminSection(ev);
   }
@@ -2097,118 +2348,6 @@ document.getElementById('refreshCheckinBtn').addEventListener('click', ()=>{
   if(!ev) return;
   syncEntrantSourceFromDOM(ev);
   renderCheckinSection(ev);
-});
-
-// ---------- lottery draw ----------
-function renderLotteryAdminSection(ev){
-  ev.lottery = ev.lottery || { poolMode:'all', excludeWinners:true, winners:[] };
-  document.querySelectorAll('input[name="lotteryPool"]').forEach(r=>{
-    r.checked = (r.value === (ev.lottery.poolMode || 'all'));
-  });
-  document.getElementById('lotteryExcludeWinners').checked = ev.lottery.excludeWinners !== false;
-  document.getElementById('lotteryPrizeInput').value = '';
-  document.getElementById('lotteryResultDisplay').textContent = '';
-  document.getElementById('lotteryResultDisplay').classList.remove('lottery-spinning');
-  renderLotteryWinnersList(ev);
-}
-
-function renderLotteryWinnersList(ev){
-  const wrap = document.getElementById('lotteryWinnersListWrap');
-  const winners = (ev.lottery && ev.lottery.winners) || [];
-  if(winners.length === 0){
-    wrap.innerHTML = '<p class="empty-note">目前還沒有抽出任何得獎者。</p>';
-    return;
-  }
-  wrap.innerHTML = `<p class="empty-note" style="margin-bottom:8px;">得獎紀錄（共 ${winners.length} 位）</p>` +
-    winners.slice().reverse().map((w, i)=>{
-      const realIndex = winners.length - 1 - i;
-      const timeLabel = w.drawnAt ? new Date(w.drawnAt).toLocaleString('zh-TW') : '';
-      return `
-        <div class="admin-team">
-          <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:0;">
-            <div>
-              <strong>🎁 ${escapeHtml(w.name)}</strong>${w.prize ? `　${escapeHtml(w.prize)}` : ''}
-              <div class="empty-note" style="margin-top:2px;">${timeLabel}</div>
-            </div>
-            <button class="btn danger small" data-action="remove-winner" data-index="${realIndex}">移除</button>
-          </div>
-        </div>`;
-    }).join('');
-  wrap.querySelectorAll('[data-action="remove-winner"]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const idx = parseInt(btn.dataset.index, 10);
-      ev.lottery.winners.splice(idx, 1);
-      renderLotteryWinnersList(ev);
-    });
-  });
-}
-
-document.getElementById('startLotteryBtn').addEventListener('click', ()=>{
-  const ev = editingState.events.find(e=>e.id===currentAdminEventId);
-  if(!ev) return;
-  ev.lottery = ev.lottery || { poolMode:'all', excludeWinners:true, winners:[] };
-  const poolMode = document.querySelector('input[name="lotteryPool"]:checked').value;
-  const excludeWinners = document.getElementById('lotteryExcludeWinners').checked;
-  const prize = document.getElementById('lotteryPrizeInput').value.trim();
-  ev.lottery.poolMode = poolMode;
-  ev.lottery.excludeWinners = excludeWinners;
-
-  const pool = getEntrantNames(ev).filter(n=>{
-    if(poolMode === 'checkedin') return !!(ev.checkins && ev.checkins[n]);
-    return true;
-  });
-  let candidates = pool;
-  if(excludeWinners){
-    const won = new Set(ev.lottery.winners.map(w=>w.name));
-    candidates = pool.filter(n=>!won.has(n));
-  }
-
-  const resultEl = document.getElementById('lotteryResultDisplay');
-  const startBtn = document.getElementById('startLotteryBtn');
-  if(candidates.length === 0){
-    resultEl.textContent = '沒有可以抽獎的人選了';
-    return;
-  }
-  const winner = candidates[Math.floor(Math.random()*candidates.length)];
-  startBtn.disabled = true;
-  resultEl.classList.add('lottery-spinning');
-  let spins = 0;
-  const maxSpins = 18;
-  const spinInterval = setInterval(()=>{
-    resultEl.textContent = candidates[Math.floor(Math.random()*candidates.length)];
-    spins++;
-    if(spins >= maxSpins){
-      clearInterval(spinInterval);
-      resultEl.classList.remove('lottery-spinning');
-      resultEl.textContent = `🎉 ${winner}`;
-      ev.lottery.winners.push({ name: winner, prize, drawnAt: new Date().toISOString() });
-      renderLotteryWinnersList(ev);
-      document.getElementById('lotteryPrizeInput').value = '';
-      startBtn.disabled = false;
-    }
-  }, 80);
-});
-
-document.getElementById('clearLotteryBtn').addEventListener('click', ()=>{
-  const btn = document.getElementById('clearLotteryBtn');
-  const ev = editingState.events.find(e=>e.id===currentAdminEventId);
-  if(!ev) return;
-  if(btn.dataset.confirming === 'true'){
-    ev.lottery.winners = [];
-    renderLotteryWinnersList(ev);
-    document.getElementById('lotteryResultDisplay').textContent = '';
-    btn.dataset.confirming = 'false';
-    btn.textContent = '清空得獎名單';
-    return;
-  }
-  btn.dataset.confirming = 'true';
-  btn.textContent = '再按一次確認清空';
-  setTimeout(()=>{
-    if(btn.isConnected){
-      btn.dataset.confirming = 'false';
-      btn.textContent = '清空得獎名單';
-    }
-  }, 3000);
 });
 
 // ---------- registration management (admin) ----------
@@ -4380,7 +4519,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
 });
 
 // ---------- navigation ----------
-const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView','adminAliasView','adminAvatarView'];
+const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView','adminAliasView','adminAvatarView','slotGameView','adminSlotGameView'];
 function hideAllViews(){
   TOP_LEVEL_VIEWS.forEach(id=> document.getElementById(id).classList.add('hidden'));
   document.getElementById('publicFooter').classList.add('hidden');
@@ -4394,7 +4533,8 @@ function syncBottomNav(){
   const isEventList = !document.getElementById('publicEventList').classList.contains('hidden');
   const isEventDetail = !document.getElementById('publicEventDetail').classList.contains('hidden');
   const isLeaderboard = !document.getElementById('leaderboardView').classList.contains('hidden');
-  const show = isEventList || isEventDetail || isLeaderboard;
+  const isSlotGame = !document.getElementById('slotGameView').classList.contains('hidden');
+  const show = isEventList || isEventDetail || isLeaderboard || isSlotGame;
   document.body.classList.toggle('has-bottom-nav', show);
   nav.classList.toggle('hidden', !show);
   if(!show){
@@ -4403,6 +4543,7 @@ function syncBottomNav(){
   }
   let active = null;
   if(isLeaderboard) active = 'leaderboard';
+  else if(isSlotGame) active = 'slotgame';
   else if(isEventList || isEventDetail) active = (activeEventTab === 'ended') ? 'ended' : 'ongoing';
   nav.querySelectorAll('.bottom-nav-btn').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.nav === active);
@@ -4429,6 +4570,8 @@ document.querySelectorAll('#bottomNav .bottom-nav-btn').forEach(btn=>{
       document.querySelectorAll('#eventTabRow .event-tab').forEach(t=> t.classList.toggle('active', t.dataset.tab === 'ended'));
     } else if(action === 'leaderboard'){
       showLeaderboard();
+    } else if(action === 'slotgame'){
+      showSlotGameView();
     } else if(action === 'admin-menu'){
       document.getElementById('bottomNavAdminMenu').classList.toggle('hidden');
     }
@@ -4619,6 +4762,7 @@ document.getElementById('toAdminBtn').addEventListener('click', showGate);
 document.getElementById('refereeBtn').addEventListener('click', showRefereeGate);
 document.getElementById('leaderboardBtn').addEventListener('click', showLeaderboard);
 document.getElementById('backFromLeaderboard').addEventListener('click', showPublic);
+document.getElementById('backFromSlotGame').addEventListener('click', showPublic);
 document.getElementById('leaderboardSearchInput').addEventListener('input', e=>{
   renderLeaderboard(e.target.value);
 });
@@ -4758,7 +4902,7 @@ document.getElementById('addEventBtn').addEventListener('click', ()=>{
   editingState.events.push({
     id: cryptoId(), name:"新賽事", date:"", type:"individual",
     individualMain:[], individualBackup:[], mainTeams:[], backupTeams:[],
-    started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, lottery:{poolMode:'all', excludeWinners:true, winners:[]}, winThreshold:4
+    started:false, bracket:null, swiss:null, group:null, doubleElim:null, format:null, checkins:{}, registrationOpen:false, registrations:[], description:'', locked:false, countsForLeaderboard:true, winThreshold:4
   });
   renderAdminEventList();
 });
