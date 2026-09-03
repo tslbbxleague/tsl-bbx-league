@@ -3616,23 +3616,23 @@ function renderRefereeGroup(ev, containerEl){
   let html = `<p class="referee-hint">獲勝方 ${_wt}～${_wt+2} 分，落敗方 0～${_wt-1} 分。輸入比分後按確認即可自動計入該組勝場。</p>`;
   group.groups.forEach((g, gi)=>{
     const pairs = groupPairs(g.length);
-    html += `<div class="admin-subsection"><div class="sub-head"><h4>第 ${gi+1} 組</h4></div>`;
+    let matchesHtml = '';
     pairs.forEach(([i,j], mi)=>{
       const a = g[i], b = g[j];
       if(!a || !b){
         const only = a || b;
-        if(only) html += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空勝）</div></div>`;
+        if(only) matchesHtml += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空勝）</div></div>`;
         return;
       }
       const key = `${gi}-${mi}`;
-      html += refereeMatchRowHtml(a, b, group.picks[key], group.scores[key], gi, mi);
+      matchesHtml += refereeMatchRowHtml(a, b, group.picks[key], group.scores[key], gi, mi);
     });
     const standings = computeGroupStandings(ev, gi);
-    html += `<div style="margin-top:8px; max-width:380px;">`;
-    html += `<div class="swiss-standings-row swiss-standings-head"><span></span><span class="swiss-col-name">選手</span><span>勝</span><span>敗</span><span>得</span><span>失</span><span>淨勝分</span></div>`;
+    let standingsHtml = `<div style="margin-top:8px; max-width:380px;">`;
+    standingsHtml += `<div class="swiss-standings-row swiss-standings-head"><span></span><span class="swiss-col-name">選手</span><span>勝</span><span>敗</span><span>得</span><span>失</span><span>淨勝分</span></div>`;
     standings.forEach(s=>{
       const diffLabel = (s.diff >= 0 ? '+' : '') + s.diff;
-      html += `<div class="swiss-standings-row">
+      standingsHtml += `<div class="swiss-standings-row">
         <span class="swiss-col-rank"></span>
         <span class="swiss-col-name">${escapeHtml(s.name)}</span>
         <span style="color:var(--lane-gold); font-weight:700;">${s.wins}</span>
@@ -3642,7 +3642,13 @@ function renderRefereeGroup(ev, containerEl){
         <span style="font-weight:700; color:${s.diff>=0?'var(--lane-green)':'var(--backup)'};">${diffLabel}</span>
       </div>`;
     });
-    html += `</div></div>`;
+    standingsHtml += `</div>`;
+    const complete = groupComplete(ev, gi);
+    if(complete){
+      html += `<details class="swiss-round-details"><summary><span class="swiss-round-arrow">▶</span><h4>第 ${gi+1} 組（已完成）</h4></summary><div class="swiss-round-body">${matchesHtml}${standingsHtml}</div></details>`;
+    } else {
+      html += `<div class="admin-subsection"><div class="sub-head"><h4>第 ${gi+1} 組</h4></div>${matchesHtml}${standingsHtml}</div>`;
+    }
   });
   containerEl.innerHTML = html;
   wireMatchRowClicks(containerEl, ev, 'group');
@@ -3660,40 +3666,52 @@ function renderRefereeDoubleElim(ev, containerEl){
   const _wt = ev.winThreshold || 4;
   let html = `<p class="referee-hint">獲勝方 ${_wt}～${_wt+2} 分，落敗方 0～${_wt-1} 分。輸家第一次會掉到敗部，敗部再輸一場就淘汰。</p>`;
 
+  let pendingHtml = '', doneHtml = '';
+  let pendingCount = 0, doneCount = 0;
+
   const k = wbRounds(de);
-  html += '<div class="admin-subsection"><div class="sub-head"><h4>勝部</h4></div>';
   for(let r=0;r<k;r++){
     const entrants = getRoundEntrants(de.wb, r);
+    let roundPending = '', roundDone = '';
     for(let i=0;i<entrants.length/2;i++){
       const a = entrants[2*i], b = entrants[2*i+1];
       if(!(a && b && a !== b)){
         const only = a || b;
-        if(only) html += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
+        if(only) roundDone += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
         continue;
       }
       const key = `${r}-${i}`;
-      html += refereeMatchRowHtml(a, b, de.wb.picks[key], de.wb.scores[key], `wb-${r}`, i);
+      const row = refereeMatchRowHtml(a, b, de.wb.picks[key], de.wb.scores[key], `wb-${r}`, i);
+      if(de.wb.picks[key]){ roundDone += row; doneCount++; }
+      else { roundPending += row; pendingCount++; }
     }
+    if(roundPending) pendingHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">勝部第 ${r+1} 輪</p>` + roundPending;
+    if(roundDone) doneHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">勝部第 ${r+1} 輪</p>` + roundDone;
   }
-  html += '</div>';
 
   const lbTotal = totalLbRounds(de);
-  if(lbTotal > 0){
-    html += '<div class="admin-subsection"><div class="sub-head"><h4>敗部</h4></div>';
-    for(let lr=0; lr<lbTotal; lr++){
-      const entrants = lbRoundEntrants(de, lr);
-      for(let i=0;i<entrants.length/2;i++){
-        const a = entrants[2*i], b = entrants[2*i+1];
-        if(!(a && b && a !== b)){
-          const only = a || b;
-          if(only) html += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
-          continue;
-        }
-        const key = `${lr}-${i}`;
-        html += refereeMatchRowHtml(a, b, de.lb.picks[key], de.lb.scores[key], `lb-${lr}`, i);
+  for(let lr=0; lr<lbTotal; lr++){
+    const entrants = lbRoundEntrants(de, lr);
+    let roundPending = '', roundDone = '';
+    for(let i=0;i<entrants.length/2;i++){
+      const a = entrants[2*i], b = entrants[2*i+1];
+      if(!(a && b && a !== b)){
+        const only = a || b;
+        if(only) roundDone += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
+        continue;
       }
+      const key = `${lr}-${i}`;
+      const row = refereeMatchRowHtml(a, b, de.lb.picks[key], de.lb.scores[key], `lb-${lr}`, i);
+      if(de.lb.picks[key]){ roundDone += row; doneCount++; }
+      else { roundPending += row; pendingCount++; }
     }
-    html += '</div>';
+    if(roundPending) pendingHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">敗部第 ${lr+1} 輪</p>` + roundPending;
+    if(roundDone) doneHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">敗部第 ${lr+1} 輪</p>` + roundDone;
+  }
+
+  html += `<div class="admin-subsection"><div class="sub-head"><h4>尚未完成（${pendingCount}）</h4></div>${pendingHtml || '<p class="empty-note">全部都已經登記完成。</p>'}</div>`;
+  if(doneCount > 0){
+    html += `<details class="swiss-round-details"><summary><span class="swiss-round-arrow">▶</span><h4>已完成（${doneCount}）</h4></summary><div class="swiss-round-body">${doneHtml}</div></details>`;
   }
 
   const wbChamp = getWbChampion(de), lbChamp = getLbChampion(de);
@@ -3724,49 +3742,61 @@ function renderRefereeBracket(ev, containerEl){
   const rounds = totalRounds(bracket);
   const _wt = ev.winThreshold || 4;
   let html = `<p class="referee-hint">獲勝方 ${_wt}～${_wt+2} 分，落敗方 0～${_wt-1} 分。輸入比分後按確認即可自動晉級。</p>`;
-  html += '<div class="bracket-wrap">';
+  let pendingHtml = '', doneHtml = '';
+  let pendingCount = 0, doneCount = 0;
   for(let r=0;r<rounds;r++){
     const entrants = getRoundEntrants(bracket, r);
-    html += `<div class="bracket-round"><div class="bracket-round-label">第 ${r+1} 輪</div>`;
+    let roundPending = '', roundDone = '';
     for(let i=0;i<entrants.length/2;i++){
       const a = entrants[2*i], b = entrants[2*i+1];
       if(!(a && b && a !== b)){
         const only = a || b;
-        html += `<div class="bracket-match"><div class="bracket-slot${only?' winner':' bye'}">${only ? escapeHtml(only)+'（輪空晉級）' : '尚未決定'}</div></div>`;
+        if(only) roundDone += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(only)}（輪空晉級）</div></div>`;
         continue;
       }
       const key = `${r}-${i}`;
-      html += refereeMatchRowHtml(a, b, bracket.picks[key], bracket.scores[key], r, i);
+      const row = refereeMatchRowHtml(a, b, bracket.picks[key], bracket.scores[key], r, i);
+      if(bracket.picks[key]){ roundDone += row; doneCount++; }
+      else { roundPending += row; pendingCount++; }
     }
-    html += `</div>`;
+    if(roundPending) pendingHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">第 ${r+1} 輪</p>` + roundPending;
+    if(roundDone) doneHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">第 ${r+1} 輪</p>` + roundDone;
   }
-  html += '</div>';
   if(bracket.finalStage === 'roundrobin'){
     const finalists = getRoundEntrants(bracket, rounds);
     const pairs = [[0,1],[0,2],[1,2]];
-    html += '<div class="admin-subsection"><div class="sub-head"><h4>三強循環賽</h4></div>';
+    let rrHtml = '';
     pairs.forEach(([i,j])=>{
       const a = finalists[i], b = finalists[j];
       if(!a && !b) return;
       if(!a || !b){
-        html += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(a||b)}（輪空晉級）</div></div>`;
+        rrHtml += `<div class="bracket-match" style="max-width:360px;"><div class="bracket-slot winner">${escapeHtml(a||b)}（輪空晉級）</div></div>`;
         return;
       }
       const key = `${i}-${j}`;
-      html += refereeMatchRowHtml(a, b, bracket.roundRobinPicks[key], bracket.roundRobinScores[key], 'rr', key);
+      const row = refereeMatchRowHtml(a, b, bracket.roundRobinPicks[key], bracket.roundRobinScores[key], 'rr', key);
+      if(bracket.roundRobinPicks[key]){ doneHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">三強循環賽</p>` + row; doneCount++; }
+      else { pendingHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">三強循環賽</p>` + row; pendingCount++; }
     });
-    const rrStandings = computeRoundRobinFinalStandings(bracket, finalists);
-    html += `<div style="margin-top:8px; max-width:380px;">${standingsTableHtml(rrStandings, false)}</div>`;
-    html += '</div>';
   } else {
     const semiLosers = getSemifinalLosers(bracket, rounds);
     if(semiLosers.length === 2){
       const [a, b] = semiLosers;
-      html += `<div class="admin-subsection"><div class="sub-head"><h4>季殿軍賽</h4></div>`;
-      html += refereeMatchRowHtml(a, b, bracket.picks['3rd'], bracket.scores['3rd'], '3rd', 0);
-      html += `</div>`;
+      const row = refereeMatchRowHtml(a, b, bracket.picks['3rd'], bracket.scores['3rd'], '3rd', 0);
+      if(bracket.picks['3rd']){ doneHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">季殿軍賽</p>` + row; doneCount++; }
+      else { pendingHtml += `<p style="font-size:11px; color:var(--ink-soft); margin:10px 0 4px;">季殿軍賽</p>` + row; pendingCount++; }
     }
+  }
+  html += `<div class="admin-subsection"><div class="sub-head"><h4>尚未完成（${pendingCount}）</h4></div>${pendingHtml || '<p class="empty-note">全部都已經登記完成。</p>'}</div>`;
+  if(doneCount > 0){
+    html += `<details class="swiss-round-details"><summary><span class="swiss-round-arrow">▶</span><h4>已完成（${doneCount}）</h4></summary><div class="swiss-round-body">${doneHtml}</div></details>`;
+  }
+  if(bracket.finalStage !== 'roundrobin'){
     html += renderBracketPlacements(bracket, rounds);
+  } else {
+    const finalists = getRoundEntrants(bracket, rounds);
+    const rrStandings = computeRoundRobinFinalStandings(bracket, finalists);
+    html += `<div class="admin-subsection"><div class="sub-head"><h4>名次</h4></div><div style="max-width:380px;">${standingsTableHtml(rrStandings, false)}</div></div>`;
   }
   containerEl.innerHTML = html;
   wireMatchRowClicks(containerEl, ev, 'bracket');
@@ -4380,9 +4410,9 @@ function showRefereeEvents(){
 
 function renderRefereeEventList(){
   const wrap = document.getElementById('refereeEventListWrap');
-  const started = refereeState.events.filter(e=> e.started && (e.bracket || e.swiss || e.group || e.doubleElim));
+  const started = refereeState.events.filter(e=> e.started && !e.locked && (e.bracket || e.swiss || e.group || e.doubleElim));
   if(started.length === 0){
-    wrap.innerHTML = '<p class="empty-note">目前沒有已經開始的賽事。</p>';
+    wrap.innerHTML = '<p class="empty-note">目前沒有需要登記的賽事（已鎖定的賽事不會顯示在這裡）。</p>';
     return;
   }
   wrap.innerHTML = started
@@ -4393,7 +4423,7 @@ function renderRefereeEventList(){
         <div>
           <p class="ev-name">${escapeHtml(ev.name)} <span class="type-chip ${ev.type==='team'?'team':'individual'}">${typeLabel(ev.type)}</span></p>
           <span class="ev-date num">${fmtDate(ev.date)}</span>
-          <p class="ev-meta">${ev.format==='swiss' ? '瑞士制' : (ev.format==='group' ? '分組循環賽' : (ev.format==='doubleElim' ? '雙敗淘汰' : '單淘汰賽'))}${ev.locked ? '　🔒 已鎖定' : ''}</p>
+          <p class="ev-meta">${ev.format==='swiss' ? '瑞士制' : (ev.format==='group' ? '分組循環賽' : (ev.format==='doubleElim' ? '雙敗淘汰' : '單淘汰賽'))}</p>
         </div>
         <span class="go">登錄比分 →</span>
       </div>
