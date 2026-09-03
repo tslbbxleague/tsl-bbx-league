@@ -330,6 +330,10 @@
     width:72px; height:72px; background:#050506; border:2px solid rgba(240,193,67,0.4); border-radius:8px;
     display:flex; align-items:center; justify-content:center; font-size:34px;
   }
+  .slot-stop-btns{ display:flex; gap:8px; margin-top:14px; }
+  .slot-stop-btns button{ flex:1; }
+  .slot-stop-btns button:disabled{ opacity:0.35; }
+  .backup-chip.slot-chip-won{ border-color:var(--lane-gold); color:var(--lane-gold); background:rgba(240,193,67,0.12); }
 
   .checkin-check{
     display:inline-flex; align-items:center; justify-content:center;
@@ -817,14 +821,20 @@
     </div>
     <div class="col">
       <label class="field-label">每次拉霸中獎機率（%）</label>
-      <input type="number" class="roster-input" id="slotGameProbInput" min="1" max="100" placeholder="例如：10">
+      <input type="number" class="roster-input" id="slotGameProbInput" min="1" max="100" placeholder="例如：15">
     </div>
   </div>
+  <p class="empty-note" style="margin-bottom:10px;">每個人拉霸是純機率決定，可能有人中、也可能剛好都沒人中（那就重設遊戲重來）。如果同時有超過獎品數量的人中獎，這些人會另外用輪盤決勝，公平抽出真正拿到獎品的人。</p>
   <div style="display:flex; gap:10px; flex-wrap:wrap;">
     <button class="btn gold small" id="saveSlotGameConfigBtn">儲存設定並開放遊戲</button>
-    <button class="btn secondary small" id="resetSlotGameBtn">🔄 重設遊戲（清空紀錄、恢復獎品數量）</button>
+    <button class="btn secondary small" id="resetSlotGameBtn">🔄 重設遊戲（清空紀錄）</button>
+  </div>
+  <div id="slotGameWheelSection" class="hidden" style="margin-top:14px;">
+    <p class="empty-note" style="margin-bottom:8px; color:var(--lane-gold);">⚠️ 目前中獎人數已經超過獎品數量，需要輪盤決勝才能決定最終得獎者。</p>
+    <button class="btn gold small" id="runWheelBtn">🎡 進行輪盤決勝</button>
   </div>
   <p class="referee-error" id="slotGameAdminError"></p>
+  <div id="slotGameWheelDisplay"></div>
   <p class="empty-note" id="slotGameStatusText" style="margin-top:14px;"></p>
   <div id="slotGamePlayLogWrap" style="margin-top:10px;"></div>
 </div>
@@ -1047,7 +1057,7 @@ async function loadData(){
       state.nameAliases = state.nameAliases || {};
       state.playerAvatars = state.playerAvatars || {};
       state.activeMatches = state.activeMatches || [];
-      state.lotteryGame = state.lotteryGame || { eventId:null, prizeName:'', prizeCount:0, winProbability:10, winnersRemaining:0, gameId:null, plays:[] };
+      state.lotteryGame = state.lotteryGame || { eventId:null, prizeName:'', prizeCount:0, winProbability:15, roster:[], confirmedWinners:[], wheelResolvedLosers:[], gameId:null, plays:[] };
     } else {
       state = seedData();
       const { error: insertError } = await sb
@@ -1119,7 +1129,7 @@ function seedData(){
     nameAliases: {},
     playerAvatars: {},
     activeMatches: [],
-    lotteryGame: { eventId:null, prizeName:'', prizeCount:0, winProbability:10, winnersRemaining:0, gameId:null, plays:[] },
+    lotteryGame: { eventId:null, prizeName:'', prizeCount:0, winProbability:15, roster:[], confirmedWinners:[], wheelResolvedLosers:[], gameId:null, plays:[] },
     events: [
       {
         id: cryptoId(), name:"個人賽", date:"2026-07-17", type:"individual",
@@ -1469,25 +1479,56 @@ function randomLosingSymbols(){
   return arr;
 }
 
+function slotBulletinBoardHtml(game){
+  const playedMap = {};
+  (game.plays || []).forEach(p=>{ playedMap[p.name] = p.won; });
+  const confirmedSet = new Set(game.confirmedWinners || []);
+  const won = [], lost = [], notPlayed = [];
+  game.roster.forEach(n=>{
+    if(!(n in playedMap)) { notPlayed.push(n); return; }
+    if(confirmedSet.has(n)) won.push(n);
+    else if(playedMap[n]) lost.push(n); // rolled a win but not yet/no longer confirmed (pending wheel, or lost the wheel)
+    else lost.push(n);
+  });
+  const chip = (n, cls)=> `<span class="backup-chip ${cls}">${escapeHtml(n)}</span>`;
+  return `
+    <div class="admin-subsection">
+      <div class="sub-head"><h4>🎉 已確認中獎（${won.length}）</h4></div>
+      <div class="backup-list">${won.length ? won.map(n=>chip(n,'slot-chip-won')).join('') : '<span class="empty-note">還沒有</span>'}</div>
+    </div>
+    <div class="admin-subsection">
+      <div class="sub-head"><h4>😢 已抽（${lost.length}）</h4></div>
+      <div class="backup-list">${lost.length ? lost.map(n=>chip(n,'')).join('') : '<span class="empty-note">還沒有</span>'}</div>
+    </div>
+    <div class="admin-subsection">
+      <div class="sub-head"><h4>⌛ 尚未抽（${notPlayed.length}）</h4></div>
+      <div class="backup-list">${notPlayed.length ? notPlayed.map(n=>chip(n,'')).join('') : '<span class="empty-note">大家都抽過了</span>'}</div>
+    </div>
+  `;
+}
+
 function renderSlotGameBody(){
   const game = state.lotteryGame;
   const wrap = document.getElementById('slotGameBody');
   const subtitle = document.getElementById('slotGameSubtitle');
-  if(!game || !game.eventId || !game.gameId){
+  if(!game || !game.eventId || !game.gameId || !game.roster || game.roster.length === 0){
     subtitle.textContent = '';
     wrap.innerHTML = '<p class="empty-note">拉霸機遊戲尚未開放，請洽主辦方。</p>';
     return;
   }
-  const ev = state.events.find(e=>e.id===game.eventId);
-  const roster = ev ? getEntrantNames(ev) : [];
-  subtitle.textContent = `獎品：${game.prizeName || '神秘獎品'}　剩餘名額 ${game.winnersRemaining} / ${game.prizeCount}`;
+  const playedMap = {};
+  (game.plays || []).forEach(p=>{ playedMap[p.name] = true; });
+  const available = game.roster.filter(n=> !(n in playedMap));
+  subtitle.textContent = `獎品：${game.prizeName || '神秘獎品'}　共 ${game.prizeCount} 個名額`;
 
   const playedKey = 'slotPlayed_' + game.gameId;
   let alreadyPlayed = null;
   try{ alreadyPlayed = JSON.parse(localStorage.getItem(playedKey)); }catch(e){ alreadyPlayed = null; }
 
+  let bodyHtml = slotBulletinBoardHtml(game);
+
   if(alreadyPlayed){
-    wrap.innerHTML = `
+    bodyHtml += `
       <div class="slot-machine">
         <div class="slot-reels">
           <div class="slot-reel">${alreadyPlayed.symbols[0]}</div>
@@ -1496,25 +1537,23 @@ function renderSlotGameBody(){
         </div>
       </div>
       <p style="text-align:center; font-size:16px; font-weight:700; margin-top:14px; color:${alreadyPlayed.won?'var(--lane-gold)':'var(--ink-soft)'};">
-        ${alreadyPlayed.won ? `🎉 恭喜中獎！代表：${escapeHtml(alreadyPlayed.name)}` : `😢 銘謝惠顧，代表：${escapeHtml(alreadyPlayed.name)}`}
+        ${alreadyPlayed.won ? `🎉 中獎！代表：${escapeHtml(alreadyPlayed.name)}（等主辦方公布最終確認名單）` : `😢 銘謝惠顧，代表：${escapeHtml(alreadyPlayed.name)}`}
       </p>
       <p class="empty-note" style="text-align:center; margin-top:6px;">這台手機這一場遊戲已經玩過囉。</p>
     `;
+    wrap.innerHTML = bodyHtml;
     return;
   }
-  if(game.winnersRemaining <= 0 && game.prizeCount > 0){
-    wrap.innerHTML = '<p class="empty-note">獎品已經全部送完了，謝謝參加！</p>';
+  if(available.length === 0){
+    bodyHtml += '<p class="empty-note">名單裡的人都玩過了，謝謝參加！</p>';
+    wrap.innerHTML = bodyHtml;
     return;
   }
-  if(roster.length === 0){
-    wrap.innerHTML = '<p class="empty-note">這場賽事目前還沒有正取名單。</p>';
-    return;
-  }
-  wrap.innerHTML = `
+  bodyHtml += `
     <div class="search">
       <select id="slotGameNameSelect" class="roster-input">
         <option value="">選一個名字代表你自己…</option>
-        ${roster.map(n=>`<option value="${escapeAttr(n)}">${escapeHtml(n)}</option>`).join('')}
+        ${available.map(n=>`<option value="${escapeAttr(n)}">${escapeHtml(n)}</option>`).join('')}
       </select>
     </div>
     <div class="slot-machine">
@@ -1523,43 +1562,70 @@ function renderSlotGameBody(){
         <div class="slot-reel">❓</div>
         <div class="slot-reel">❓</div>
       </div>
+      <div class="slot-stop-btns" id="slotStopBtns">
+        <button class="btn card-action-btn" data-reel="0" disabled>左 停</button>
+        <button class="btn card-action-btn" data-reel="1" disabled>中 停</button>
+        <button class="btn card-action-btn" data-reel="2" disabled>右 停</button>
+      </div>
     </div>
-    <button class="btn gold" id="slotPullBtn" style="width:100%; padding:14px; font-size:16px; margin-top:14px;" disabled>🎰 拉霸！</button>
+    <button class="btn gold" id="slotPullBtn" style="width:100%; padding:14px; font-size:16px; margin-top:14px;" disabled>🎰 開始拉霸！</button>
     <p class="referee-error" id="slotGameError"></p>
   `;
+  wrap.innerHTML = bodyHtml;
   const select = document.getElementById('slotGameNameSelect');
   const pullBtn = document.getElementById('slotPullBtn');
   select.addEventListener('change', ()=>{ pullBtn.disabled = !select.value; });
   pullBtn.addEventListener('click', ()=> playSlotGame(select.value));
 }
 
-function animateSlotReels(finalSymbols, won, name){
+// Each reel spins freely until the player taps its own stop button, landing
+// on the pre-determined final symbol — gives the person a bit of agency
+// over the reveal even though the outcome itself was already decided.
+function runSlotReels(finalSymbols, won, name){
+  const pullBtn = document.getElementById('slotPullBtn');
+  const select = document.getElementById('slotGameNameSelect');
+  if(pullBtn) pullBtn.remove();
+  if(select) select.disabled = true;
   const reels = document.querySelectorAll('#slotReels .slot-reel');
-  let ticks = 0;
-  const maxTicks = 20;
-  const interval = setInterval(()=>{
-    reels.forEach((r, i)=>{
-      if(ticks < maxTicks - (i*3)){
-        r.textContent = SLOT_SYMBOLS[Math.floor(Math.random()*SLOT_SYMBOLS.length)];
-      } else {
-        r.textContent = finalSymbols[i];
-      }
-    });
-    ticks++;
-    if(ticks > maxTicks){
-      clearInterval(interval);
+  const stopBtns = document.querySelectorAll('#slotStopBtns button');
+  const spinIntervals = [null, null, null];
+  const stopped = [false, false, false];
+
+  reels.forEach((r, i)=>{
+    spinIntervals[i] = setInterval(()=>{
+      r.textContent = SLOT_SYMBOLS[Math.floor(Math.random()*SLOT_SYMBOLS.length)];
+    }, 70);
+  });
+  stopBtns.forEach(btn=>{ btn.disabled = false; });
+
+  function finishIfAllStopped(){
+    if(stopped[0] && stopped[1] && stopped[2]){
       const resultP = document.createElement('p');
       resultP.style.cssText = 'text-align:center; font-size:16px; font-weight:700; margin-top:14px;';
       resultP.style.color = won ? 'var(--lane-gold)' : 'var(--ink-soft)';
-      resultP.textContent = won ? `🎉 恭喜中獎！代表：${name}` : `😢 銘謝惠顧，代表：${name}`;
-      const body = document.getElementById('slotGameBody');
-      if(body) body.appendChild(resultP);
-      const pullBtn = document.getElementById('slotPullBtn');
-      if(pullBtn) pullBtn.remove();
-      const select = document.getElementById('slotGameNameSelect');
-      if(select && select.closest('.search')) select.closest('.search').remove();
+      resultP.textContent = won ? `🎉 中獎！代表：${name}（等主辦方公布最終確認名單）` : `😢 銘謝惠顧，代表：${name}`;
+      document.getElementById('slotGameBody').appendChild(resultP);
     }
-  }, 90);
+  }
+
+  stopBtns.forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const i = parseInt(btn.dataset.reel, 10);
+      if(stopped[i]) return;
+      clearInterval(spinIntervals[i]);
+      reels[i].textContent = finalSymbols[i];
+      stopped[i] = true;
+      btn.disabled = true;
+      finishIfAllStopped();
+    });
+  });
+
+  // Safety auto-stop after a few seconds in case someone doesn't tap all three.
+  setTimeout(()=>{
+    stopBtns.forEach((btn, i)=>{
+      if(!stopped[i]) btn.click();
+    });
+  }, 6000);
 }
 
 async function playSlotGame(name){
@@ -1574,18 +1640,14 @@ async function playSlotGame(name){
     const freshState = (data && data.value) ? data.value : JSON.parse(JSON.stringify(state));
     const game = freshState.lotteryGame;
     if(!game || !game.gameId) throw new Error('game not configured');
-    let won = false;
-    if(game.winnersRemaining > 0){
-      won = Math.random() * 100 < (game.winProbability || 10);
-      if(won) game.winnersRemaining -= 1;
-    }
+    const won = Math.random() * 100 < (game.winProbability || 15);
     game.plays = game.plays || [];
     game.plays.push({ name, won, at: new Date().toISOString() });
     await persist(freshState);
     state = freshState;
     const symbols = won ? ['🏆','🏆','🏆'] : randomLosingSymbols();
     localStorage.setItem('slotPlayed_' + game.gameId, JSON.stringify({ name, won, symbols }));
-    animateSlotReels(symbols, won, name);
+    runSlotReels(symbols, won, name);
   }catch(e){
     errEl.textContent = '拉霸失敗，請檢查網路後再試一次。';
     errEl.style.display = 'block';
@@ -1911,7 +1973,7 @@ document.getElementById('addAliasBtn').addEventListener('click', ()=>{
 });
 document.getElementById('saveAliasBtn').addEventListener('click', async ()=>{
   try{
-    await persist(editingState);
+    await safeSaveEditingState();
     showStatus('statusMsgAlias', '已儲存，戰績榜會套用新的合併規則。');
   }catch(e){
     showStatus('statusMsgAlias', '儲存失敗，請稍後再試。', true);
@@ -1954,24 +2016,37 @@ function getAvatarHtml(name, size){
 }
 
 // ---------- slot machine game (admin config) ----------
+function computeSlotGamePool(game){
+  // Everyone who has ever rolled a win but hasn't been through the wheel yet.
+  const wonNames = (game.plays || []).filter(p=>p.won).map(p=>p.name);
+  const confirmedSet = new Set(game.confirmedWinners || []);
+  const resolvedSet = new Set(game.wheelResolvedLosers || []);
+  return wonNames.filter(n=> !confirmedSet.has(n) && !resolvedSet.has(n));
+}
+
 function renderSlotGameAdmin(){
-  editingState.lotteryGame = editingState.lotteryGame || { eventId:null, prizeName:'', prizeCount:0, winProbability:10, winnersRemaining:0, gameId:null, plays:[] };
+  editingState.lotteryGame = editingState.lotteryGame || { eventId:null, prizeName:'', prizeCount:0, winProbability:15, roster:[], confirmedWinners:[], wheelResolvedLosers:[], gameId:null, plays:[] };
   const game = editingState.lotteryGame;
   const sel = document.getElementById('slotGameEventSelect');
   const individualEvents = editingState.events.filter(e=> e.type === 'individual');
   sel.innerHTML = '<option value="">－ 尚未選擇 －</option>' + individualEvents.map(e=>
-    `<option value="${e.id}" ${game.eventId===e.id?'selected':''}>${escapeHtml(e.name)}</option>`
+    `<option value="${e.id}" ${game.eventId===e.id?'selected':''}>${escapeHtml(e.name)}（${getEntrantNames(e).length}人）</option>`
   ).join('');
   document.getElementById('slotGamePrizeInput').value = game.prizeName || '';
   document.getElementById('slotGamePrizeCountInput').value = game.prizeCount || 0;
-  document.getElementById('slotGameProbInput').value = game.winProbability || 10;
+  document.getElementById('slotGameProbInput').value = game.winProbability || 15;
   document.getElementById('slotGameAdminError').style.display = 'none';
   const statusEl = document.getElementById('slotGameStatusText');
+  const pool = computeSlotGamePool(game);
+  const confirmedCount = (game.confirmedWinners || []).length;
+  const remainingPrizes = Math.max((game.prizeCount||0) - confirmedCount, 0);
   if(!game.eventId || !game.gameId){
     statusEl.textContent = '目前遊戲尚未開放（還沒儲存設定）。';
   } else {
-    statusEl.textContent = `目前狀態：剩餘 ${game.winnersRemaining} / ${game.prizeCount} 個獎品，已經有 ${game.plays.length} 人玩過。`;
+    statusEl.textContent = `名單共 ${game.roster.length} 人，共有 ${game.plays.length} 次遊玩。目前已確認中獎 ${confirmedCount} / ${game.prizeCount}，還有 ${pool.length} 人中獎但尚未確認。`;
   }
+  document.getElementById('slotGameWheelSection').classList.toggle('hidden', !(pool.length > remainingPrizes && remainingPrizes > 0));
+  document.getElementById('slotGameWheelDisplay').innerHTML = '';
   const logWrap = document.getElementById('slotGamePlayLogWrap');
   if(!game.plays || game.plays.length === 0){
     logWrap.innerHTML = '';
@@ -1999,18 +2074,25 @@ document.getElementById('saveSlotGameConfigBtn').addEventListener('click', async
   const eventId = document.getElementById('slotGameEventSelect').value;
   const prizeName = document.getElementById('slotGamePrizeInput').value.trim();
   const prizeCount = parseInt(document.getElementById('slotGamePrizeCountInput').value, 10) || 0;
-  const winProbability = parseInt(document.getElementById('slotGameProbInput').value, 10) || 10;
+  const winProbability = Math.min(100, Math.max(1, parseInt(document.getElementById('slotGameProbInput').value, 10) || 15));
   if(!eventId){
     errEl.textContent = '請選擇一場賽事作為代表身分來源。';
     errEl.style.display = 'block';
     return;
   }
+  const ev = editingState.events.find(e=>e.id===eventId);
+  const roster = ev ? getEntrantNames(ev) : [];
+  if(roster.length === 0){
+    errEl.textContent = '這場賽事目前還沒有正取名單，無法開放遊戲。';
+    errEl.style.display = 'block';
+    return;
+  }
   editingState.lotteryGame = {
-    eventId, prizeName, prizeCount, winProbability,
-    winnersRemaining: prizeCount, gameId: cryptoId(), plays: []
+    eventId, prizeName, prizeCount, winProbability, roster,
+    confirmedWinners: [], wheelResolvedLosers: [], gameId: cryptoId(), plays: []
   };
   try{
-    await persist(editingState);
+    await safeSaveEditingState();
     renderSlotGameAdmin();
     errEl.style.display = 'none';
   }catch(e){
@@ -2023,22 +2105,69 @@ document.getElementById('resetSlotGameBtn').addEventListener('click', async ()=>
   if(btn.dataset.confirming !== 'true'){
     btn.dataset.confirming = 'true';
     btn.textContent = '再按一次確認重設';
-    setTimeout(()=>{ if(btn.isConnected){ btn.dataset.confirming='false'; btn.textContent='🔄 重設遊戲（清空紀錄、恢復獎品數量）'; } }, 3000);
+    setTimeout(()=>{ if(btn.isConnected){ btn.dataset.confirming='false'; btn.textContent='🔄 重設遊戲（清空紀錄）'; } }, 3000);
     return;
   }
   btn.dataset.confirming = 'false';
-  btn.textContent = '🔄 重設遊戲（清空紀錄、恢復獎品數量）';
+  btn.textContent = '🔄 重設遊戲（清空紀錄）';
   const game = editingState.lotteryGame;
   if(!game || !game.eventId) return;
-  game.winnersRemaining = game.prizeCount;
+  game.confirmedWinners = [];
+  game.wheelResolvedLosers = [];
   game.gameId = cryptoId();
   game.plays = [];
   try{
-    await persist(editingState);
+    await safeSaveEditingState();
     renderSlotGameAdmin();
   }catch(e){
     document.getElementById('slotGameAdminError').textContent = '重設失敗，請稍後再試。';
     document.getElementById('slotGameAdminError').style.display = 'block';
+  }
+});
+document.getElementById('runWheelBtn').addEventListener('click', async ()=>{
+  const game = editingState.lotteryGame;
+  if(!game) return;
+  const pool = computeSlotGamePool(game);
+  const remaining = Math.max(game.prizeCount - (game.confirmedWinners||[]).length, 0);
+  if(pool.length <= remaining || remaining <= 0) return;
+  const btn = document.getElementById('runWheelBtn');
+  btn.disabled = true;
+  const displayEl = document.getElementById('slotGameWheelDisplay');
+  let candidates = pool.slice();
+  const picked = [];
+  // Spin once per remaining prize: a fast-cycling name reveal, landing on a
+  // random pick from whoever's still in the running for that slot.
+  for(let round=0; round<remaining; round++){
+    const winnerIdx = Math.floor(Math.random() * candidates.length);
+    const winnerName = candidates[winnerIdx];
+    await new Promise(resolve=>{
+      const el = document.createElement('p');
+      el.style.cssText = 'text-align:center; font-size:20px; font-weight:900; margin:10px 0; color:var(--lane-gold);';
+      displayEl.appendChild(el);
+      let ticks = 0;
+      const maxTicks = 16;
+      const interval = setInterval(()=>{
+        el.textContent = '🎡 ' + candidates[Math.floor(Math.random()*candidates.length)];
+        ticks++;
+        if(ticks > maxTicks){
+          clearInterval(interval);
+          el.textContent = '🎉 ' + winnerName;
+          resolve();
+        }
+      }, 90);
+    });
+    picked.push(winnerName);
+    candidates = candidates.filter(n=> n !== winnerName);
+  }
+  game.confirmedWinners = (game.confirmedWinners || []).concat(picked);
+  game.wheelResolvedLosers = (game.wheelResolvedLosers || []).concat(candidates);
+  try{
+    await safeSaveEditingState();
+    renderSlotGameAdmin();
+  }catch(e){
+    document.getElementById('slotGameAdminError').textContent = '儲存輪盤結果失敗，請稍後再試。';
+    document.getElementById('slotGameAdminError').style.display = 'block';
+    btn.disabled = false;
   }
 });
 
@@ -2102,7 +2231,7 @@ document.getElementById('addAvatarBtn').addEventListener('click', async ()=>{
 });
 document.getElementById('saveAvatarBtn').addEventListener('click', async ()=>{
   try{
-    await persist(editingState);
+    await safeSaveEditingState();
     showStatus('statusMsgAvatar', '已儲存，頭貼會套用到對戰畫面。');
   }catch(e){
     showStatus('statusMsgAvatar', '儲存失敗，請稍後再試。', true);
@@ -4922,8 +5051,39 @@ document.getElementById('addBackupTeamBtn').addEventListener('click', ()=>{
   renderTeamGroupEditor(ev, 'backupTeams', 'backupTeamsWrap');
 });
 
+// Before any admin "儲存變更" writes editingState to the database, this
+// re-fetches the current server data and pulls the freshest tournament/score
+// fields (bracket, swiss, group, doubleElim, checkins, locked) into
+// editingState for every event EXCEPT the one currently open in the format
+// editor (where the admin's own just-made clicks should win instead). This
+// stops a stale admin tab from silently overwriting referee-entered scores
+// just because it had been open for a while before saving.
+async function safeSaveEditingState(){
+  const { data, error } = await sb.from('roster_data').select('value').eq('key', STORAGE_KEY).maybeSingle();
+  if(error) throw error;
+  const freshState = (data && data.value) ? data.value : null;
+  if(freshState && Array.isArray(freshState.events)){
+    editingState.events.forEach(ev=>{
+      if(ev.id === currentAdminEventId) return; // this one may have local unsaved format edits — keep it as-is
+      const freshEv = freshState.events.find(fe=>fe.id===ev.id);
+      if(!freshEv) return;
+      ev.bracket = freshEv.bracket;
+      ev.swiss = freshEv.swiss;
+      ev.group = freshEv.group;
+      ev.doubleElim = freshEv.doubleElim;
+      ev.checkins = freshEv.checkins;
+      ev.locked = freshEv.locked;
+    });
+    // pick up events created elsewhere since this admin session started
+    freshState.events.forEach(freshEv=>{
+      if(!editingState.events.find(e=>e.id===freshEv.id)) editingState.events.push(freshEv);
+    });
+  }
+  await persist(editingState);
+}
+
 document.getElementById('saveEventsBtn').addEventListener('click', async ()=>{
-  try{ await persist(editingState); showStatus('statusMsgEvents', '已儲存，公開頁面已同步更新。'); }
+  try{ await safeSaveEditingState(); showStatus('statusMsgEvents', '已儲存，公開頁面已同步更新。'); }
   catch(e){ showStatus('statusMsgEvents', '儲存失敗，請稍後再試。', true); }
 });
 document.getElementById('saveRosterBtn').addEventListener('click', async ()=>{
@@ -4938,7 +5098,7 @@ document.getElementById('saveRosterBtn').addEventListener('click', async ()=>{
       syncTeamGroupFromDOM(ev, 'backupTeams', 'backupTeamsWrap');
     }
   }
-  try{ await persist(editingState); showStatus('statusMsgRoster', '已儲存，公開頁面已同步更新。'); }
+  try{ await safeSaveEditingState(); showStatus('statusMsgRoster', '已儲存，公開頁面已同步更新。'); }
   catch(e){ showStatus('statusMsgRoster', '儲存失敗，請稍後再試。', true); }
 });
 
