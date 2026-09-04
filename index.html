@@ -71,6 +71,11 @@
     background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:10px;
     box-shadow:0 8px 24px rgba(0,0,0,0.45);
   }
+  #bottomNavGamesMenu{
+    position:fixed; bottom:70px; left:50%; transform:translateX(-50%); z-index:61; display:flex; flex-direction:column; gap:8px;
+    background:var(--panel); border:1px solid var(--lane-gold); border-radius:6px; padding:10px; min-width:160px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.45);
+  }
   body.has-bottom-nav{ padding-bottom:64px; }
 
   #liveTicker{
@@ -335,6 +340,18 @@
   .slot-stop-btns button:disabled{ opacity:0.35; }
   .backup-chip.slot-chip-won{ border-color:var(--lane-gold); color:var(--lane-gold); background:rgba(240,193,67,0.12); }
 
+  .red-envelope-tap-area{
+    width:100%; min-height:260px; background:linear-gradient(145deg, #d81e2c, #a3151f);
+    border-radius:14px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    cursor:pointer; user-select:none; -webkit-user-select:none; touch-action:manipulation;
+    box-shadow:0 8px 30px rgba(216,30,44,0.4); border:3px solid #FFD700;
+  }
+  .red-envelope-tap-area:active{ transform:scale(0.98); }
+  .red-envelope-tap-area .re-icon{ font-size:64px; }
+  .red-envelope-click-count{ font-family:'Oswald',sans-serif; font-size:56px; font-weight:900; color:#FFD700; margin-top:8px; }
+  .red-envelope-countdown{ font-family:'Oswald',sans-serif; font-size:72px; font-weight:900; color:var(--lane-gold); text-align:center; margin:30px 0; }
+  .red-envelope-timer{ font-family:'Oswald',sans-serif; font-size:22px; font-weight:900; color:var(--backup); text-align:center; margin-bottom:10px; }
+
   .checkin-check{
     display:inline-flex; align-items:center; justify-content:center;
     width:16px; height:16px; min-width:16px; border-radius:50%;
@@ -394,7 +411,7 @@
 
   #matchControlPanel{ max-width:560px; }
   .match-control-stage{
-    position:relative; margin:14px 0; min-height:380px; border-radius:8px; overflow:hidden;
+    position:relative; margin:14px 0; border-radius:8px; overflow:hidden;
     background:
       radial-gradient(circle at 15% 10%, rgba(58,199,255,0.10), transparent 45%),
       radial-gradient(circle at 85% 90%, rgba(240,193,67,0.09), transparent 45%),
@@ -404,23 +421,10 @@
     border:1px solid rgba(240,193,67,0.25);
     box-shadow:0 0 24px rgba(240,193,67,0.08);
   }
-  .match-control-stage video{
-    position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; background:#000;
-  }
-  .match-control-camera-controls{ display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-  .match-control-scoreboard{
-    position:relative; z-index:2; display:flex; min-height:380px; height:100%;
-  }
+  .match-control-scoreboard{ display:flex; }
   .match-control-side{
     flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;
     background:rgba(21,22,28,0.55); border:1px solid rgba(240,193,67,0.15); padding:18px 12px; text-align:center;
-    transition:background .2s ease;
-  }
-  /* Once the camera is actually running, the side panels become translucent
-     so the battle underneath stays visible through the score controls —
-     everything fits in one screen instead of stacking camera above scoring. */
-  .match-control-stage.camera-active .match-control-side{
-    background:rgba(10,10,13,0.38); backdrop-filter:blur(1.5px); border-color:rgba(240,193,67,0.3);
   }
   .match-control-name{
     font-size:16px; font-weight:900; margin-bottom:10px; letter-spacing:0.5px;
@@ -465,8 +469,6 @@
 
   @media (orientation: landscape){
     #matchControlPanel{ max-width:none; }
-    .match-control-stage{ min-height:260px; }
-    .match-control-scoreboard{ min-height:260px; }
   }
 </style>
 </head>
@@ -589,6 +591,17 @@
   <div id="slotGameBody"></div>
 </main>
 
+<main class="hidden" id="redEnvelopeView">
+  <div class="crumbs">
+    <button id="backFromRedEnvelope">← 賽事一覽</button>
+  </div>
+  <div class="event-title-block">
+    <h2 style="font-size:20px;">🧧 搶紅包</h2>
+    <span class="date num" id="redEnvelopeSubtitle" style="font-size:12px;"></span>
+  </div>
+  <div id="redEnvelopeBody"></div>
+</main>
+
 <main class="hidden" id="leaderboardView">
   <div class="crumbs">
     <button id="backFromLeaderboard">← 賽事一覽</button>
@@ -673,8 +686,7 @@
   <div id="matchControlPanel" class="hidden">
     <button class="btn secondary small" id="matchControlBackBtn">← 返回對戰列表</button>
 
-    <div class="match-control-stage" id="matchControlStage">
-      <video id="matchControlVideo" autoplay playsinline muted></video>
+    <div class="match-control-stage">
       <div class="match-control-scoreboard">
         <div class="match-control-side">
           <div class="match-control-name" id="matchControlNameA"></div>
@@ -697,13 +709,8 @@
         </div>
       </div>
     </div>
-    <div class="match-control-camera-controls">
-      <button class="btn secondary small" id="cameraToggleBtn">📷 開啟鏡頭</button>
-      <button class="btn secondary small hidden" id="cameraSwitchBtn">🔄 切換鏡頭</button>
-      <button class="btn danger small hidden" id="cameraRecordBtn">⏺️ 開始錄影</button>
-      <a class="btn gold small hidden" id="cameraDownloadLink" download="match-recording.webm">⬇️ 下載影片</a>
-    </div>
-    <p class="referee-error" id="cameraError"></p>
+    <label class="btn secondary small" for="nativeCameraInput" style="display:inline-block; margin-top:10px; cursor:pointer;">📹 開啟手機相機錄影</label>
+    <input type="file" id="nativeCameraInput" accept="video/*" capture="environment" class="hidden">
 
     <p class="referee-error" id="matchControlError"></p>
     <div style="display:flex; gap:10px; margin-top:14px;">
@@ -726,6 +733,7 @@
       <button class="btn secondary" id="openAliasBtn">🔗 戰績榜暱稱合併</button>
       <button class="btn secondary" id="openAvatarBtn">👤 選手資料設定</button>
       <button class="btn secondary" id="openSlotGameAdminBtn">🎰 拉霸機設定</button>
+      <button class="btn secondary" id="openRedEnvelopeAdminBtn">🧧 搶紅包設定</button>
       <button class="btn gold" id="addEventBtn">＋ 新增賽事</button>
     </div>
   </div>
@@ -837,6 +845,53 @@
   <div id="slotGameWheelDisplay"></div>
   <p class="empty-note" id="slotGameStatusText" style="margin-top:14px;"></p>
   <div id="slotGamePlayLogWrap" style="margin-top:10px;"></div>
+</div>
+
+<!-- ADMIN: red envelope clicking game settings -->
+<div class="admin-wrap hidden" id="adminRedEnvelopeView">
+  <div class="admin-toolbar">
+    <button class="btn secondary" id="backFromRedEnvelopeAdmin">← 返回賽事列表</button>
+  </div>
+  <div class="event-title-block">
+    <h2 style="font-size:18px;">🧧 搶紅包設定</h2>
+  </div>
+  <p class="empty-note" style="margin-bottom:14px;">設定倒數幾秒後開始，開始後大家狂點畫面幾秒，點越多次抽獎機率越高。時間到你按「開獎」，系統會依照大家的點擊次數加權抽出得獎者（點越多次中獎機率越高，但不是點最多就一定中）。</p>
+  <div class="cols admin-list-editor">
+    <div class="col">
+      <label class="field-label">代表身分來源賽事</label>
+      <select class="roster-input" id="redEnvelopeEventSelect"><option value="">－ 尚未選擇 －</option></select>
+    </div>
+    <div class="col">
+      <label class="field-label">獎品名稱</label>
+      <input type="text" class="roster-input" id="redEnvelopePrizeInput" placeholder="例如：現金紅包">
+    </div>
+  </div>
+  <div class="cols admin-list-editor">
+    <div class="col">
+      <label class="field-label">獎品數量</label>
+      <input type="number" class="roster-input" id="redEnvelopePrizeCountInput" min="1" placeholder="例如：3">
+    </div>
+    <div class="col">
+      <label class="field-label">開始前倒數秒數</label>
+      <input type="number" class="roster-input" id="redEnvelopeCountdownInput" min="3" placeholder="例如：10">
+    </div>
+  </div>
+  <div class="cols admin-list-editor">
+    <div class="col">
+      <label class="field-label">狂點時間（秒）</label>
+      <input type="number" class="roster-input" id="redEnvelopeDurationInput" min="5" placeholder="例如：15">
+    </div>
+    <div class="col"></div>
+  </div>
+  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    <button class="btn gold small" id="saveRedEnvelopeConfigBtn">儲存設定</button>
+    <button class="btn gold small" id="startRedEnvelopeBtn">🧧 開始遊戲（所有人開始倒數）</button>
+    <button class="btn secondary small" id="drawRedEnvelopeBtn">🎲 開獎</button>
+    <button class="btn secondary small" id="resetRedEnvelopeBtn">🔄 重設遊戲</button>
+  </div>
+  <p class="referee-error" id="redEnvelopeAdminError"></p>
+  <p class="empty-note" id="redEnvelopeStatusText" style="margin-top:14px;"></p>
+  <div id="redEnvelopeClickLogWrap" style="margin-top:10px;"></div>
 </div>
 
 <!-- ADMIN: ROSTER EDITOR FOR ONE EVENT -->
@@ -1002,13 +1057,17 @@
 <nav id="bottomNav" class="hidden">
   <button class="bottom-nav-btn" data-nav="ongoing"><span class="bottom-nav-icon">🔴</span><span>進行中</span></button>
   <button class="bottom-nav-btn" data-nav="ended"><span class="bottom-nav-icon">🏁</span><span>過去比賽</span></button>
-  <button class="bottom-nav-btn bottom-nav-btn-mid" data-nav="slotgame"><span class="bottom-nav-icon">🎰</span><span>拉霸機</span></button>
+  <button class="bottom-nav-btn bottom-nav-btn-mid" data-nav="games"><span class="bottom-nav-icon">🎮</span><span>小遊戲</span></button>
   <button class="bottom-nav-btn" data-nav="leaderboard"><span class="bottom-nav-icon">🏆</span><span>榮譽榜</span></button>
   <button class="bottom-nav-btn" data-nav="admin-menu"><span class="bottom-nav-icon">⚙️</span><span>裁判／後台</span></button>
 </nav>
 <div id="bottomNavAdminMenu" class="hidden">
   <button class="btn secondary" id="bottomNavRefereeBtn">🏁 裁判登錄</button>
   <button class="btn gold" id="bottomNavAdminBtn">後台管理</button>
+</div>
+<div id="bottomNavGamesMenu" class="hidden">
+  <button class="btn gold" id="bottomNavSlotGameBtn">🎰 拉霸機</button>
+  <button class="btn gold" id="bottomNavRedEnvelopeBtn">🧧 搶紅包</button>
 </div>
 
 <script>
@@ -1058,6 +1117,7 @@ async function loadData(){
       state.playerAvatars = state.playerAvatars || {};
       state.activeMatches = state.activeMatches || [];
       state.lotteryGame = state.lotteryGame || { eventId:null, prizeName:'', prizeCount:0, winProbability:15, roster:[], confirmedWinners:[], wheelResolvedLosers:[], gameId:null, plays:[] };
+      state.redEnvelopeGame = state.redEnvelopeGame || { eventId:null, prizeName:'', prizeCount:0, countdownSeconds:10, durationSeconds:15, gameId:null, status:'idle', startAt:null, clicks:{}, winners:[] };
     } else {
       state = seedData();
       const { error: insertError } = await sb
@@ -1130,6 +1190,7 @@ function seedData(){
     playerAvatars: {},
     activeMatches: [],
     lotteryGame: { eventId:null, prizeName:'', prizeCount:0, winProbability:15, roster:[], confirmedWinners:[], wheelResolvedLosers:[], gameId:null, plays:[] },
+    redEnvelopeGame: { eventId:null, prizeName:'', prizeCount:0, countdownSeconds:10, durationSeconds:15, gameId:null, status:'idle', startAt:null, clicks:{}, winners:[] },
     events: [
       {
         id: cryptoId(), name:"個人賽", date:"2026-07-17", type:"individual",
@@ -1441,7 +1502,7 @@ function renderLeaderboard(filter){
     <div class="event-card leaderboard-row" data-idx="${i}" style="cursor:pointer; flex-direction:column; align-items:stretch;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <div>
-          <p class="ev-name">${i+1}. ${getAvatarHtml(r.name, 26)}${escapeHtml(r.name)}</p>
+          <p class="ev-name">${i+1}. ${getAvatarHtml(r.name, 42)}${escapeHtml(r.name)}</p>
           <p class="ev-meta">
             ${r.champion ? `🏆 冠軍 ×${r.champion}　` : ''}${r.runnerUp ? `🥈 亞軍 ×${r.runnerUp}　` : ''}${r.third ? `🥉 季軍 ×${r.third}　` : ''}${r.fourth ? `4️⃣ 殿軍 ×${r.fourth}` : ''}
           </p>
@@ -1464,6 +1525,155 @@ function renderLeaderboard(filter){
 }
 
 const SLOT_SYMBOLS = ['🌀','⚡','🔥','💥','⭐','🏆'];
+
+// ---------- red envelope clicking game (public play) ----------
+let reTicker = null;
+let reLocalClicks = 0;
+let reSelectedName = '';
+
+function showRedEnvelopeView(){
+  hideAllViews();
+  document.getElementById('redEnvelopeView').classList.remove('hidden');
+  reLocalClicks = 0;
+  reSelectedName = '';
+  if(reTicker){ clearInterval(reTicker); reTicker = null; }
+  renderRedEnvelopeBody();
+}
+
+function renderRedEnvelopeCountdownUI(game){
+  const wrap = document.getElementById('redEnvelopeBody');
+  wrap.innerHTML = `
+    <div class="search">
+      <select id="redEnvelopeNameSelect" class="roster-input">
+        <option value="">選一個名字代表你自己…</option>
+        ${game.roster.map(n=>`<option value="${escapeAttr(n)}">${escapeHtml(n)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="red-envelope-countdown" id="reCountdownNum">--</div>
+    <p class="empty-note" style="text-align:center;">選好代表自己的名字，倒數結束後畫面會自動變成瘋狂點擊！</p>
+  `;
+  const select = document.getElementById('redEnvelopeNameSelect');
+  if(reSelectedName) select.value = reSelectedName;
+  select.addEventListener('change', ()=>{ reSelectedName = select.value; });
+}
+
+function renderRedEnvelopeClickUI(){
+  const wrap = document.getElementById('redEnvelopeBody');
+  wrap.innerHTML = `
+    <div class="red-envelope-timer" id="reTimerNum"></div>
+    <div class="red-envelope-tap-area" id="reTapArea">
+      <div class="re-icon">🧧</div>
+      <div class="red-envelope-click-count" id="reClickCount">0</div>
+    </div>
+    <p class="empty-note" style="text-align:center; margin-top:10px;">代表：${reSelectedName ? escapeHtml(reSelectedName) : '（沒選名字，這輪不計分）'}</p>
+  `;
+  const tapArea = document.getElementById('reTapArea');
+  const countEl = document.getElementById('reClickCount');
+  tapArea.addEventListener('click', ()=>{
+    if(!reSelectedName) return;
+    reLocalClicks++;
+    countEl.textContent = reLocalClicks;
+  });
+}
+
+async function finishRedEnvelopeRound(game){
+  const wrap = document.getElementById('redEnvelopeBody');
+  if(!reSelectedName || reLocalClicks === 0){
+    wrap.innerHTML = '<p class="empty-note" style="text-align:center; margin-top:20px;">時間到！這輪沒有選代表或沒有點擊，沒能參加到這輪，殘念。</p>';
+    return;
+  }
+  wrap.innerHTML = '<p class="empty-note" style="text-align:center; margin-top:20px;">送出中…</p>';
+  const myName = reSelectedName, myClicks = reLocalClicks;
+  try{
+    const { data, error } = await sb.from('roster_data').select('value').eq('key', STORAGE_KEY).maybeSingle();
+    if(error) throw error;
+    const freshState = (data && data.value) ? data.value : JSON.parse(JSON.stringify(state));
+    const freshGame = freshState.redEnvelopeGame;
+    if(freshGame && freshGame.gameId === game.gameId){
+      freshGame.clicks = freshGame.clicks || {};
+      freshGame.clicks[myName] = (freshGame.clicks[myName] || 0) + myClicks;
+      await persist(freshState);
+      state = freshState;
+    }
+    localStorage.setItem('redEnvelopeSubmitted_' + game.gameId, JSON.stringify({ name: myName, clicks: myClicks }));
+    wrap.innerHTML = `<p class="empty-note" style="text-align:center; margin-top:20px;">🧧 時間到！代表：${escapeHtml(myName)}，總共點了 ${myClicks} 下，已經送出！等主辦方開獎。</p>`;
+  }catch(e){
+    wrap.innerHTML = '<p class="referee-error" style="display:block; text-align:center;">送出失敗，請檢查網路後重新整理再試一次（你點的次數已經記在這台手機上，重新整理不會消失）。</p>';
+  }
+}
+
+function startRedEnvelopeTicker(game, startTime, endTime){
+  let phase = null;
+  function tick(){
+    const now = Date.now();
+    if(now < startTime){
+      if(phase !== 'countdown'){ phase = 'countdown'; renderRedEnvelopeCountdownUI(game); }
+      const el = document.getElementById('reCountdownNum');
+      if(el) el.textContent = Math.ceil((startTime - now) / 1000);
+    } else if(now < endTime){
+      if(phase !== 'clicking'){ phase = 'clicking'; renderRedEnvelopeClickUI(); }
+      const el = document.getElementById('reTimerNum');
+      if(el) el.textContent = `剩下 ${Math.ceil((endTime - now) / 1000)} 秒！`;
+    } else {
+      clearInterval(reTicker);
+      reTicker = null;
+      finishRedEnvelopeRound(game);
+    }
+  }
+  tick();
+  reTicker = setInterval(tick, 200);
+}
+
+function renderRedEnvelopeBody(){
+  const game = state.redEnvelopeGame;
+  const wrap = document.getElementById('redEnvelopeBody');
+  const subtitle = document.getElementById('redEnvelopeSubtitle');
+  if(reTicker){ clearInterval(reTicker); reTicker = null; }
+
+  if(!game || !game.eventId || !game.gameId || !Array.isArray(game.roster) || game.roster.length === 0){
+    subtitle.textContent = '';
+    wrap.innerHTML = '<p class="empty-note">搶紅包遊戲尚未開放，請洽主辦方。</p>';
+    return;
+  }
+  subtitle.textContent = `獎品：${game.prizeName || '神秘獎品'}　共 ${game.prizeCount} 個名額`;
+
+  const submittedKey = 'redEnvelopeSubmitted_' + game.gameId;
+  let submitted = null;
+  try{ submitted = JSON.parse(localStorage.getItem(submittedKey)); }catch(e){ submitted = null; }
+
+  if(submitted){
+    if(game.status === 'ended'){
+      const won = (game.winners || []).includes(submitted.name);
+      wrap.innerHTML = `
+        <p style="text-align:center; font-size:16px; font-weight:700; margin-top:20px; color:${won?'var(--lane-gold)':'var(--ink-soft)'};">
+          ${won ? '🎉 恭喜中獎！' : '😢 銘謝惠顧'}　代表：${escapeHtml(submitted.name)}（點了 ${submitted.clicks} 下）
+        </p>
+        ${(game.winners && game.winners.length) ? `<p class="empty-note" style="text-align:center; margin-top:10px;">得獎名單：${game.winners.map(escapeHtml).join('、')}</p>` : '<p class="empty-note" style="text-align:center;">主辦方還沒開獎。</p>'}
+      `;
+    } else {
+      wrap.innerHTML = `<p class="empty-note" style="text-align:center; margin-top:20px;">你已經參加過這一場了，代表：${escapeHtml(submitted.name)}，點了 ${submitted.clicks} 下。等主辦方開獎。</p>`;
+    }
+    return;
+  }
+
+  if(game.status === 'ended'){
+    wrap.innerHTML = `<p class="empty-note">這場搶紅包已經結束了。${(game.winners && game.winners.length) ? `得獎名單：${game.winners.map(escapeHtml).join('、')}` : '尚未開獎。'}</p>`;
+    return;
+  }
+
+  if(game.status !== 'pending' || !game.startAt){
+    wrap.innerHTML = '<p class="empty-note">遊戲還沒開始，請等主辦方按下「開始遊戲」。</p>';
+    return;
+  }
+
+  const startTime = new Date(game.startAt).getTime();
+  const endTime = startTime + (game.durationSeconds || 15) * 1000;
+  if(Date.now() >= endTime){
+    wrap.innerHTML = '<p class="empty-note">這一輪搶紅包時間已經到了，你來晚了一步，請等主辦方開下一輪。</p>';
+    return;
+  }
+  startRedEnvelopeTicker(game, startTime, endTime);
+}
 
 function showSlotGameView(){
   hideAllViews();
@@ -2012,7 +2222,7 @@ function resizeImageFile(file, maxSize){
 function getAvatarHtml(name, size){
   const url = state.playerAvatars && state.playerAvatars[name];
   if(!url) return '';
-  return `<img src="${url}" class="player-avatar" style="width:${size}px; height:${size}px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:6px; border:1px solid var(--line);">`;
+  return `<img src="${url}" class="player-avatar" style="width:${size}px; height:${size}px; border-radius:50%; object-fit:contain; background:#050506; vertical-align:middle; margin-right:6px; border:1px solid var(--line);">`;
 }
 
 // ---------- slot machine game (admin config) ----------
@@ -2181,6 +2391,182 @@ document.getElementById('runWheelBtn').addEventListener('click', async ()=>{
   }
 });
 
+// ---------- red envelope clicking game (admin config) ----------
+function drawWeightedWinners(clicksMap, count){
+  // Weighted lottery without replacement: each person's chance is
+  // proportional to their click count, drawn one at a time so the pool
+  // shrinks correctly each round (more clicks = higher odds, never a lock).
+  let pool = Object.entries(clicksMap || {}).filter(([n,c])=> c > 0).map(([n,c])=> ({ name:n, weight:c }));
+  const winners = [];
+  const rounds = Math.min(count, pool.length);
+  for(let i=0;i<rounds;i++){
+    const totalWeight = pool.reduce((s,p)=> s+p.weight, 0);
+    let r = Math.random() * totalWeight;
+    let idx = 0;
+    for(; idx<pool.length; idx++){
+      r -= pool[idx].weight;
+      if(r <= 0) break;
+    }
+    if(idx >= pool.length) idx = pool.length - 1;
+    winners.push(pool[idx].name);
+    pool.splice(idx, 1);
+  }
+  return winners;
+}
+
+function renderRedEnvelopeAdmin(){
+  editingState.redEnvelopeGame = editingState.redEnvelopeGame || {};
+  const game = editingState.redEnvelopeGame;
+  game.clicks = (game.clicks && typeof game.clicks === 'object') ? game.clicks : {};
+  game.winners = Array.isArray(game.winners) ? game.winners : [];
+  game.prizeCount = game.prizeCount || 0;
+  game.countdownSeconds = game.countdownSeconds || 10;
+  game.durationSeconds = game.durationSeconds || 15;
+  game.status = game.status || 'idle';
+
+  const sel = document.getElementById('redEnvelopeEventSelect');
+  const individualEvents = editingState.events.filter(e=> e.type === 'individual');
+  sel.innerHTML = '<option value="">－ 尚未選擇 －</option>' + individualEvents.map(e=>
+    `<option value="${e.id}" ${game.eventId===e.id?'selected':''}>${escapeHtml(e.name)}</option>`
+  ).join('');
+  document.getElementById('redEnvelopePrizeInput').value = game.prizeName || '';
+  document.getElementById('redEnvelopePrizeCountInput').value = game.prizeCount || '';
+  document.getElementById('redEnvelopeCountdownInput').value = game.countdownSeconds;
+  document.getElementById('redEnvelopeDurationInput').value = game.durationSeconds;
+  document.getElementById('redEnvelopeAdminError').style.display = 'none';
+
+  const statusEl = document.getElementById('redEnvelopeStatusText');
+  const statusLabel = { idle:'尚未開始', pending:'倒數中／進行中', ended:'已結束，等待開獎' }[game.status] || game.status;
+  if(!game.eventId || !game.gameId){
+    statusEl.textContent = '目前遊戲尚未開放（還沒儲存設定）。';
+  } else {
+    const totalClicks = Object.values(game.clicks).reduce((s,c)=>s+c, 0);
+    statusEl.textContent = `狀態：${statusLabel}　共 ${Object.keys(game.clicks).length} 人參加、總點擊 ${totalClicks} 下${game.winners.length ? `　已開獎：${game.winners.join('、')}` : ''}`;
+  }
+  const logWrap = document.getElementById('redEnvelopeClickLogWrap');
+  const entries = Object.entries(game.clicks).sort((a,b)=> b[1]-a[1]);
+  if(entries.length === 0){
+    logWrap.innerHTML = '';
+  } else {
+    logWrap.innerHTML = '<p class="empty-note" style="margin-bottom:6px;">點擊排行（次數越多，中獎機率越高）</p>' +
+      entries.map(([name, count])=> `<div class="empty-note" style="padding:4px 0; border-bottom:1px solid var(--line);">${escapeHtml(name)}　${count} 下</div>`).join('');
+  }
+}
+
+document.getElementById('openRedEnvelopeAdminBtn').addEventListener('click', ()=>{
+  renderRedEnvelopeAdmin();
+  document.getElementById('adminEventList').classList.add('hidden');
+  document.getElementById('adminRedEnvelopeView').classList.remove('hidden');
+});
+document.getElementById('backFromRedEnvelopeAdmin').addEventListener('click', ()=>{
+  document.getElementById('adminRedEnvelopeView').classList.add('hidden');
+  document.getElementById('adminEventList').classList.remove('hidden');
+  renderAdminEventList();
+});
+document.getElementById('saveRedEnvelopeConfigBtn').addEventListener('click', async ()=>{
+  const errEl = document.getElementById('redEnvelopeAdminError');
+  errEl.style.display = 'none';
+  const eventId = document.getElementById('redEnvelopeEventSelect').value;
+  const prizeName = document.getElementById('redEnvelopePrizeInput').value.trim();
+  const prizeCount = parseInt(document.getElementById('redEnvelopePrizeCountInput').value, 10) || 0;
+  const countdownSeconds = parseInt(document.getElementById('redEnvelopeCountdownInput').value, 10) || 10;
+  const durationSeconds = parseInt(document.getElementById('redEnvelopeDurationInput').value, 10) || 15;
+  if(!eventId){
+    errEl.textContent = '請選擇一場賽事作為代表身分來源。';
+    errEl.style.display = 'block';
+    return;
+  }
+  const ev = editingState.events.find(e=>e.id===eventId);
+  const roster = ev ? getEntrantNames(ev) : [];
+  if(roster.length === 0){
+    errEl.textContent = '這場賽事目前還沒有正取名單，無法開放遊戲。';
+    errEl.style.display = 'block';
+    return;
+  }
+  editingState.redEnvelopeGame = {
+    eventId, prizeName, prizeCount, countdownSeconds, durationSeconds, roster,
+    gameId: cryptoId(), status:'idle', startAt:null, clicks:{}, winners:[]
+  };
+  try{
+    await safeSaveEditingState();
+    renderRedEnvelopeAdmin();
+  }catch(e){
+    errEl.textContent = '儲存失敗，請稍後再試。';
+    errEl.style.display = 'block';
+  }
+});
+document.getElementById('startRedEnvelopeBtn').addEventListener('click', async ()=>{
+  const errEl = document.getElementById('redEnvelopeAdminError');
+  errEl.style.display = 'none';
+  const game = editingState.redEnvelopeGame;
+  if(!game || !game.eventId || !game.gameId){
+    errEl.textContent = '請先儲存設定。';
+    errEl.style.display = 'block';
+    return;
+  }
+  game.gameId = cryptoId(); // new session so everyone's local "already played" state resets
+  game.status = 'pending';
+  game.startAt = new Date(Date.now() + (game.countdownSeconds||10)*1000).toISOString();
+  game.clicks = {};
+  game.winners = [];
+  try{
+    await safeSaveEditingState();
+    renderRedEnvelopeAdmin();
+  }catch(e){
+    errEl.textContent = '開始失敗，請稍後再試。';
+    errEl.style.display = 'block';
+  }
+});
+document.getElementById('drawRedEnvelopeBtn').addEventListener('click', async ()=>{
+  const errEl = document.getElementById('redEnvelopeAdminError');
+  errEl.style.display = 'none';
+  const game = editingState.redEnvelopeGame;
+  if(!game || !game.eventId || !game.gameId){
+    errEl.textContent = '目前沒有可以開獎的遊戲。';
+    errEl.style.display = 'block';
+    return;
+  }
+  if(Object.keys(game.clicks || {}).length === 0){
+    errEl.textContent = '目前還沒有人點擊，無法開獎。';
+    errEl.style.display = 'block';
+    return;
+  }
+  game.status = 'ended';
+  game.winners = drawWeightedWinners(game.clicks, game.prizeCount || 0);
+  try{
+    await safeSaveEditingState();
+    renderRedEnvelopeAdmin();
+  }catch(e){
+    errEl.textContent = '開獎失敗，請稍後再試。';
+    errEl.style.display = 'block';
+  }
+});
+document.getElementById('resetRedEnvelopeBtn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('resetRedEnvelopeBtn');
+  if(btn.dataset.confirming !== 'true'){
+    btn.dataset.confirming = 'true';
+    btn.textContent = '再按一次確認重設';
+    setTimeout(()=>{ if(btn.isConnected){ btn.dataset.confirming='false'; btn.textContent='🔄 重設遊戲'; } }, 3000);
+    return;
+  }
+  btn.dataset.confirming = 'false';
+  btn.textContent = '🔄 重設遊戲';
+  const game = editingState.redEnvelopeGame;
+  if(!game || !game.eventId) return;
+  game.gameId = cryptoId();
+  game.status = 'idle';
+  game.startAt = null;
+  game.clicks = {};
+  game.winners = [];
+  try{
+    await safeSaveEditingState();
+    renderRedEnvelopeAdmin();
+  }catch(e){
+    document.getElementById('redEnvelopeAdminError').textContent = '重設失敗，請稍後再試。';
+    document.getElementById('redEnvelopeAdminError').style.display = 'block';
+  }
+});
+
 function renderAvatarAdmin(){
   editingState.playerAvatars = editingState.playerAvatars || {};
   const wrap = document.getElementById('avatarListWrap');
@@ -2193,7 +2579,7 @@ function renderAvatarAdmin(){
     <div class="admin-team">
       <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:0;">
         <div style="display:flex; align-items:center; gap:10px;">
-          <img src="${dataUrl}" style="width:40px; height:40px; border-radius:50%; object-fit:cover; border:1px solid var(--line);">
+          <img src="${dataUrl}" style="width:40px; height:40px; border-radius:50%; object-fit:contain; background:#050506; border:1px solid var(--line);">
           <strong>${escapeHtml(name)}</strong>
         </div>
         <button class="btn danger small" data-action="delete-avatar" data-name="${escapeAttr(name)}">刪除</button>
@@ -3745,7 +4131,6 @@ function openMatchControl(ev, kind, roundVal, matchVal, nameA, nameB, existingSc
 
 function closeMatchControl(){
   matchControlState = null;
-  stopCamera();
   document.getElementById('matchControlPanel').classList.add('hidden');
   document.getElementById('refMatchDisplay').classList.remove('hidden');
   const currentMatchLabel = document.getElementById('refCurrentMatchLabel');
@@ -3844,77 +4229,6 @@ document.querySelectorAll('#matchControlPanel .match-control-btns button').forEa
 document.getElementById('matchControlUndoBtn').addEventListener('click', undoMatchControlPoint);
 document.getElementById('matchControlConfirmBtn').addEventListener('click', confirmMatchControl);
 document.getElementById('matchControlBackBtn').addEventListener('click', closeMatchControl);
-
-// ---------- optional camera recording (for referees recording the battle) ----------
-let cameraStream = null;
-let mediaRecorder = null;
-let recordedChunks = [];
-let cameraFacingMode = 'environment';
-
-async function startCamera(){
-  try{
-    if(cameraStream) cameraStream.getTracks().forEach(t=>t.stop());
-    cameraStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode: cameraFacingMode }, audio:true });
-    document.getElementById('matchControlVideo').srcObject = cameraStream;
-    document.getElementById('matchControlStage').classList.add('camera-active');
-    document.getElementById('cameraToggleBtn').textContent = '📷 關閉鏡頭';
-    document.getElementById('cameraSwitchBtn').classList.remove('hidden');
-    document.getElementById('cameraRecordBtn').classList.remove('hidden');
-    document.getElementById('cameraError').textContent = ''; document.getElementById('cameraError').style.display = 'none';
-  }catch(e){
-    document.getElementById('cameraError').textContent = '無法開啟鏡頭，請確認已允許瀏覽器使用攝影機權限。'; document.getElementById('cameraError').style.display = 'block';
-  }
-}
-
-function stopCamera(){
-  if(mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
-  if(cameraStream){ cameraStream.getTracks().forEach(t=>t.stop()); cameraStream = null; }
-  const video = document.getElementById('matchControlVideo');
-  if(video) video.srcObject = null;
-  const stage = document.getElementById('matchControlStage');
-  if(stage) stage.classList.remove('camera-active');
-  const toggleBtn = document.getElementById('cameraToggleBtn');
-  if(toggleBtn) toggleBtn.textContent = '📷 開啟鏡頭';
-  const switchBtn = document.getElementById('cameraSwitchBtn');
-  if(switchBtn) switchBtn.classList.add('hidden');
-  const recordBtn = document.getElementById('cameraRecordBtn');
-  if(recordBtn){ recordBtn.classList.add('hidden'); recordBtn.textContent = '⏺️ 開始錄影'; }
-}
-
-document.getElementById('cameraToggleBtn').addEventListener('click', ()=>{
-  if(cameraStream) stopCamera(); else startCamera();
-});
-document.getElementById('cameraSwitchBtn').addEventListener('click', ()=>{
-  cameraFacingMode = cameraFacingMode === 'environment' ? 'user' : 'environment';
-  startCamera();
-});
-document.getElementById('cameraRecordBtn').addEventListener('click', ()=>{
-  if(!cameraStream) return;
-  const recordBtn = document.getElementById('cameraRecordBtn');
-  if(mediaRecorder && mediaRecorder.state === 'recording'){
-    mediaRecorder.stop();
-    recordBtn.textContent = '⏺️ 開始錄影';
-    return;
-  }
-  recordedChunks = [];
-  try{
-    mediaRecorder = new MediaRecorder(cameraStream);
-  }catch(e){
-    document.getElementById('cameraError').textContent = '這個瀏覽器不支援錄影功能。'; document.getElementById('cameraError').style.display = 'block';
-    return;
-  }
-  mediaRecorder.ondataavailable = e=>{ if(e.data.size > 0) recordedChunks.push(e.data); };
-  mediaRecorder.onstop = ()=>{
-    const blob = new Blob(recordedChunks, { type:'video/webm' });
-    const url = URL.createObjectURL(blob);
-    const link = document.getElementById('cameraDownloadLink');
-    link.href = url;
-    link.classList.remove('hidden');
-  };
-  mediaRecorder.start();
-  recordBtn.textContent = '⏹️ 停止錄影';
-  document.getElementById('cameraDownloadLink').classList.add('hidden');
-});
 
 function renderRefereeGroup(ev, containerEl){
   const group = ev.group;
@@ -4658,7 +4972,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
 });
 
 // ---------- navigation ----------
-const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView','adminAliasView','adminAvatarView','slotGameView','adminSlotGameView'];
+const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView','adminAliasView','adminAvatarView','slotGameView','adminSlotGameView','redEnvelopeView','adminRedEnvelopeView'];
 function hideAllViews(){
   TOP_LEVEL_VIEWS.forEach(id=> document.getElementById(id).classList.add('hidden'));
   document.getElementById('publicFooter').classList.add('hidden');
@@ -4673,16 +4987,19 @@ function syncBottomNav(){
   const isEventDetail = !document.getElementById('publicEventDetail').classList.contains('hidden');
   const isLeaderboard = !document.getElementById('leaderboardView').classList.contains('hidden');
   const isSlotGame = !document.getElementById('slotGameView').classList.contains('hidden');
-  const show = isEventList || isEventDetail || isLeaderboard || isSlotGame;
+  const isRedEnvelope = !document.getElementById('redEnvelopeView').classList.contains('hidden');
+  const show = isEventList || isEventDetail || isLeaderboard || isSlotGame || isRedEnvelope;
   document.body.classList.toggle('has-bottom-nav', show);
   nav.classList.toggle('hidden', !show);
+  if(!isRedEnvelope && reTicker){ clearInterval(reTicker); reTicker = null; }
   if(!show){
     document.getElementById('bottomNavAdminMenu').classList.add('hidden');
+    document.getElementById('bottomNavGamesMenu').classList.add('hidden');
     return;
   }
   let active = null;
   if(isLeaderboard) active = 'leaderboard';
-  else if(isSlotGame) active = 'slotgame';
+  else if(isSlotGame || isRedEnvelope) active = 'games';
   else if(isEventList || isEventDetail) active = (activeEventTab === 'ended') ? 'ended' : 'ongoing';
   nav.querySelectorAll('.bottom-nav-btn').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.nav === active);
@@ -4709,13 +5026,24 @@ document.querySelectorAll('#bottomNav .bottom-nav-btn').forEach(btn=>{
       document.querySelectorAll('#eventTabRow .event-tab').forEach(t=> t.classList.toggle('active', t.dataset.tab === 'ended'));
     } else if(action === 'leaderboard'){
       showLeaderboard();
-    } else if(action === 'slotgame'){
-      showSlotGameView();
+    } else if(action === 'games'){
+      document.getElementById('bottomNavAdminMenu').classList.add('hidden');
+      document.getElementById('bottomNavGamesMenu').classList.toggle('hidden');
     } else if(action === 'admin-menu'){
+      document.getElementById('bottomNavGamesMenu').classList.add('hidden');
       document.getElementById('bottomNavAdminMenu').classList.toggle('hidden');
     }
   });
 });
+document.getElementById('bottomNavSlotGameBtn').addEventListener('click', ()=>{
+  document.getElementById('bottomNavGamesMenu').classList.add('hidden');
+  showSlotGameView();
+});
+document.getElementById('bottomNavRedEnvelopeBtn').addEventListener('click', ()=>{
+  document.getElementById('bottomNavGamesMenu').classList.add('hidden');
+  showRedEnvelopeView();
+});
+document.getElementById('backFromRedEnvelope').addEventListener('click', showPublic);
 document.getElementById('bottomNavRefereeBtn').addEventListener('click', ()=>{
   document.getElementById('bottomNavAdminMenu').classList.add('hidden');
   showRefereeGate();
