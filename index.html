@@ -340,15 +340,24 @@
   .slot-stop-btns button:disabled{ opacity:0.35; }
   .backup-chip.slot-chip-won{ border-color:var(--lane-gold); color:var(--lane-gold); background:rgba(240,193,67,0.12); }
 
-  .red-envelope-tap-area{
-    width:100%; min-height:260px; background:linear-gradient(145deg, #d81e2c, #a3151f);
-    border-radius:14px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  .spin-battlefield{
+    position:relative; width:100%; height:230px; overflow:hidden;
+    background: radial-gradient(circle at 50% 50%, rgba(58,199,255,0.10), transparent 65%), #050506;
+    border:3px solid var(--lane-gold); border-radius:14px;
     cursor:pointer; user-select:none; -webkit-user-select:none; touch-action:manipulation;
-    box-shadow:0 8px 30px rgba(216,30,44,0.4); border:3px solid #FFD700;
+    box-shadow:0 8px 30px rgba(240,193,67,0.2);
   }
-  .red-envelope-tap-area:active{ transform:scale(0.98); }
-  .red-envelope-tap-area .re-icon{ font-size:64px; }
-  .red-envelope-click-count{ font-family:'Oswald',sans-serif; font-size:56px; font-weight:900; color:#FFD700; margin-top:8px; }
+  .spin-battlefield:active{ transform:scale(0.99); }
+  .spin-battlefield .bg-top{
+    position:absolute; font-size:28px; opacity:0.3; animation:spin-top-anim 1.8s linear infinite;
+  }
+  .player-top-wrap{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); }
+  .player-top{
+    display:inline-block; font-size:68px; animation:spin-top-anim 2s linear infinite;
+    filter:drop-shadow(0 0 14px rgba(240,193,67,0.75));
+  }
+  @keyframes spin-top-anim{ from{ transform:rotate(0deg); } to{ transform:rotate(360deg); } }
+  .red-envelope-click-count{ font-family:'Oswald',sans-serif; font-size:52px; font-weight:900; color:var(--lane-gold); text-align:center; margin-top:10px; }
   .red-envelope-countdown{ font-family:'Oswald',sans-serif; font-size:72px; font-weight:900; color:var(--lane-gold); text-align:center; margin:30px 0; }
   .red-envelope-timer{ font-family:'Oswald',sans-serif; font-size:22px; font-weight:900; color:var(--backup); text-align:center; margin-bottom:10px; }
 
@@ -596,7 +605,7 @@
     <button id="backFromRedEnvelope">← 賽事一覽</button>
   </div>
   <div class="event-title-block">
-    <h2 style="font-size:20px;">🧧 搶紅包</h2>
+    <h2 style="font-size:20px;">🌀 陀螺轉速大戰</h2>
     <span class="date num" id="redEnvelopeSubtitle" style="font-size:12px;"></span>
   </div>
   <div id="redEnvelopeBody"></div>
@@ -733,7 +742,7 @@
       <button class="btn secondary" id="openAliasBtn">🔗 戰績榜暱稱合併</button>
       <button class="btn secondary" id="openAvatarBtn">👤 選手資料設定</button>
       <button class="btn secondary" id="openSlotGameAdminBtn">🎰 拉霸機設定</button>
-      <button class="btn secondary" id="openRedEnvelopeAdminBtn">🧧 搶紅包設定</button>
+      <button class="btn secondary" id="openRedEnvelopeAdminBtn">🌀 轉速大戰設定</button>
       <button class="btn gold" id="addEventBtn">＋ 新增賽事</button>
     </div>
   </div>
@@ -853,9 +862,9 @@
     <button class="btn secondary" id="backFromRedEnvelopeAdmin">← 返回賽事列表</button>
   </div>
   <div class="event-title-block">
-    <h2 style="font-size:18px;">🧧 搶紅包設定</h2>
+    <h2 style="font-size:18px;">🌀 陀螺轉速大戰設定</h2>
   </div>
-  <p class="empty-note" style="margin-bottom:14px;">設定倒數幾秒後開始，開始後大家狂點畫面幾秒，點越多次抽獎機率越高。時間到你按「開獎」，系統會依照大家的點擊次數加權抽出得獎者（點越多次中獎機率越高，但不是點最多就一定中）。</p>
+  <p class="empty-note" style="margin-bottom:14px;">設定倒數幾秒後開始，開始後畫面上會有陀螺在場上轉，大家狂點讓自己的陀螺轉速飆高幾秒。中獎機率＝「你的轉速值 ÷ 全部人轉速值加起來」，只要轉速不是 0 就有機會抽到，轉越快機率越高。時間到、大約再等 5 秒讓大家送出最後的轉速值，系統會**自動**開獎，不用你手動按——每個人的手機畫面會自動一起播放跑馬燈（由少到多公布大家的轉速值）、5-4-3-2-1 倒數、最後用輪盤動畫公布真正得獎者。下面的「手動開獎」只是萬一自動沒觸發時的備用選項。</p>
   <div class="cols admin-list-editor">
     <div class="col">
       <label class="field-label">代表身分來源賽事</label>
@@ -878,15 +887,15 @@
   </div>
   <div class="cols admin-list-editor">
     <div class="col">
-      <label class="field-label">狂點時間（秒）</label>
+      <label class="field-label">狂點轉速時間（秒）</label>
       <input type="number" class="roster-input" id="redEnvelopeDurationInput" min="5" placeholder="例如：15">
     </div>
     <div class="col"></div>
   </div>
   <div style="display:flex; gap:10px; flex-wrap:wrap;">
     <button class="btn gold small" id="saveRedEnvelopeConfigBtn">儲存設定</button>
-    <button class="btn gold small" id="startRedEnvelopeBtn">🧧 開始遊戲（所有人開始倒數）</button>
-    <button class="btn secondary small" id="drawRedEnvelopeBtn">🎲 開獎</button>
+    <button class="btn gold small" id="startRedEnvelopeBtn">🌀 開始遊戲（所有人開始倒數）</button>
+    <button class="btn secondary small" id="drawRedEnvelopeBtn">🎲 手動開獎（備用，通常不需要按）</button>
     <button class="btn secondary small" id="resetRedEnvelopeBtn">🔄 重設遊戲</button>
   </div>
   <p class="referee-error" id="redEnvelopeAdminError"></p>
@@ -993,6 +1002,8 @@
           <label><input type="radio" name="bracketSize" value="32" checked> 32 人</label>
           <label><input type="radio" name="bracketSize" value="48"> 48 人<span id="bracketSize48Note">（三強循環）</span></label>
           <label><input type="radio" name="bracketSize" value="64"> 64 人</label>
+          <label><input type="radio" name="bracketSize" value="96"> 96 人<span id="bracketSize96Note">（三強循環）</span></label>
+          <label><input type="radio" name="bracketSize" value="128"> 128 人</label>
         </div>
         <div id="swissSizeRow" class="hidden" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
           <label for="swissSizeInput" style="font-size:13px; color:var(--ink-soft);">參賽人數（留空＝目前正取名單全部人數）</label>
@@ -1067,7 +1078,7 @@
 </div>
 <div id="bottomNavGamesMenu" class="hidden">
   <button class="btn gold" id="bottomNavSlotGameBtn">🎰 拉霸機</button>
-  <button class="btn gold" id="bottomNavRedEnvelopeBtn">🧧 搶紅包</button>
+  <button class="btn gold" id="bottomNavRedEnvelopeBtn">🌀 轉速大戰</button>
 </div>
 
 <script>
@@ -1561,25 +1572,73 @@ function renderRedEnvelopeClickUI(){
   const wrap = document.getElementById('redEnvelopeBody');
   wrap.innerHTML = `
     <div class="red-envelope-timer" id="reTimerNum"></div>
-    <div class="red-envelope-tap-area" id="reTapArea">
-      <div class="re-icon">🧧</div>
-      <div class="red-envelope-click-count" id="reClickCount">0</div>
+    <div class="spin-battlefield" id="reTapArea">
+      <div class="bg-top" style="top:12%; left:14%;">🌀</div>
+      <div class="bg-top" style="top:72%; left:18%; animation-duration:1.4s;">🌀</div>
+      <div class="bg-top" style="top:18%; left:78%; animation-duration:2.1s;">🌀</div>
+      <div class="bg-top" style="top:68%; left:74%; animation-duration:1.7s;">🌀</div>
+      <div class="bg-top" style="top:45%; left:8%; animation-duration:1.9s;">🌀</div>
+      <div class="bg-top" style="top:40%; left:88%; animation-duration:1.6s;">🌀</div>
+      <div class="player-top-wrap">
+        <div class="player-top" id="rePlayerTop">🌀</div>
+      </div>
     </div>
-    <p class="empty-note" style="text-align:center; margin-top:10px;">代表：${reSelectedName ? escapeHtml(reSelectedName) : '（沒選名字，這輪不計分）'}</p>
+    <div class="red-envelope-click-count" id="reClickCount">0</div>
+    <p class="empty-note" style="text-align:center; margin-top:-4px;">轉速值（點越多轉越快）</p>
+    <p class="empty-note" style="text-align:center; margin-top:6px;">代表：${reSelectedName ? escapeHtml(reSelectedName) : '（沒選名字，這輪不計分）'}</p>
   `;
   const tapArea = document.getElementById('reTapArea');
   const countEl = document.getElementById('reClickCount');
+  const playerTop = document.getElementById('rePlayerTop');
   tapArea.addEventListener('click', ()=>{
     if(!reSelectedName) return;
     reLocalClicks++;
     countEl.textContent = reLocalClicks;
+    // Spin visibly faster with every click, capping out so it doesn't become
+    // an imperceptible blur once someone's really gone to town on it.
+    const duration = Math.max(0.12, 2 - reLocalClicks * 0.015);
+    playerTop.style.animationDuration = duration + 's';
   });
+}
+
+// No backend cron job exists on a static site, so "automatic" draw has to be
+// triggered by whichever device's browser happens to be active once the
+// grace period has passed. Safe to call from multiple devices at once —
+// each re-checks the freshest state and backs off if someone already drew.
+let reAutoDrawAttempted = {};
+async function maybeAutoDrawRedEnvelope(expectedGameId){
+  if(reAutoDrawAttempted[expectedGameId]) return;
+  reAutoDrawAttempted[expectedGameId] = true;
+  try{
+    const { data, error } = await sb.from('roster_data').select('value').eq('key', STORAGE_KEY).maybeSingle();
+    if(error) throw error;
+    const freshState = (data && data.value) ? data.value : null;
+    if(!freshState) return;
+    const freshGame = freshState.redEnvelopeGame;
+    if(!freshGame || freshGame.gameId !== expectedGameId) return;
+    if(freshGame.status === 'ended'){ state = freshState; return; } // someone else already drew it
+    if(freshGame.status !== 'pending' || !freshGame.startAt) return;
+    const endTime = new Date(freshGame.startAt).getTime() + (freshGame.durationSeconds || 15) * 1000;
+    if(Date.now() < endTime + 5000) return; // grace period not over yet
+    if(Object.keys(freshGame.clicks || {}).length === 0) return; // nobody played — leave it for admin to reset
+    freshGame.revealOrder = Object.entries(freshGame.clicks)
+      .filter(([n,c])=> c > 0)
+      .sort((a,b)=> a[1]-b[1])
+      .map(([n,c])=> ({ name:n, clicks:c }));
+    freshGame.status = 'ended';
+    freshGame.winners = drawWeightedWinners(freshGame.clicks, freshGame.prizeCount || 0);
+    await persist(freshState);
+    state = freshState;
+  }catch(e){
+    reAutoDrawAttempted[expectedGameId] = false; // allow a retry on the next trigger
+  }
 }
 
 async function finishRedEnvelopeRound(game){
   const wrap = document.getElementById('redEnvelopeBody');
   if(!reSelectedName || reLocalClicks === 0){
-    wrap.innerHTML = '<p class="empty-note" style="text-align:center; margin-top:20px;">時間到！這輪沒有選代表或沒有點擊，沒能參加到這輪，殘念。</p>';
+    wrap.innerHTML = '<p class="empty-note" style="text-align:center; margin-top:20px;">時間到！這輪沒有選代表或沒有點擊，沒能參加到這輪，殘念。統計中，請稍候…</p>';
+    setTimeout(async ()=>{ await maybeAutoDrawRedEnvelope(game.gameId); renderRedEnvelopeBody(); }, 5200);
     return;
   }
   wrap.innerHTML = '<p class="empty-note" style="text-align:center; margin-top:20px;">送出中…</p>';
@@ -1596,7 +1655,8 @@ async function finishRedEnvelopeRound(game){
       state = freshState;
     }
     localStorage.setItem('redEnvelopeSubmitted_' + game.gameId, JSON.stringify({ name: myName, clicks: myClicks }));
-    wrap.innerHTML = `<p class="empty-note" style="text-align:center; margin-top:20px;">🧧 時間到！代表：${escapeHtml(myName)}，總共點了 ${myClicks} 下，已經送出！等主辦方開獎。</p>`;
+    wrap.innerHTML = `<p class="empty-note" style="text-align:center; margin-top:20px;">🌀 時間到！代表：${escapeHtml(myName)}，最終轉速值 ${myClicks}，已經送出！統計中，請稍候幾秒…</p>`;
+    setTimeout(async ()=>{ await maybeAutoDrawRedEnvelope(game.gameId); renderRedEnvelopeBody(); }, 5200);
   }catch(e){
     wrap.innerHTML = '<p class="referee-error" style="display:block; text-align:center;">送出失敗，請檢查網路後重新整理再試一次（你點的次數已經記在這台手機上，重新整理不會消失）。</p>';
   }
@@ -1624,6 +1684,87 @@ function startRedEnvelopeTicker(game, startTime, endTime){
   reTicker = setInterval(tick, 200);
 }
 
+async function playRedEnvelopeCeremony(game){
+  const wrap = document.getElementById('redEnvelopeBody');
+  const revealOrder = game.revealOrder || [];
+  const winners = game.winners || [];
+
+  wrap.innerHTML = `
+    <p style="text-align:center; font-family:'Oswald',sans-serif; font-size:13px; letter-spacing:2px; color:var(--ink-soft); margin-bottom:10px;">🌀 開獎典禮開始 🌀</p>
+    <div id="reRevealBoard" style="min-height:120px; display:flex; flex-direction:column; align-items:center; justify-content:center;"></div>
+  `;
+  const board = document.getElementById('reRevealBoard');
+  const maxTotalMs = 9000;
+  const perEntry = revealOrder.length > 0 ? Math.max(350, Math.min(1200, maxTotalMs / revealOrder.length)) : 0;
+  for(let i=0;i<revealOrder.length;i++){
+    const entry = revealOrder[i];
+    board.innerHTML = `
+      <p style="font-family:'Oswald',sans-serif; font-size:13px; color:var(--ink-soft);">第 ${i+1} 位公布</p>
+      <p style="font-size:22px; font-weight:900; color:var(--ink); margin:6px 0;">${escapeHtml(entry.name)}</p>
+      <p style="font-family:'Oswald',sans-serif; font-size:16px; color:var(--lane-gold);">轉速 ${entry.clicks}</p>
+    `;
+    await new Promise(r=>setTimeout(r, perEntry));
+  }
+
+  for(let n=5; n>=1; n--){
+    wrap.innerHTML = `<div class="red-envelope-countdown" style="margin-top:40px;">${n}</div>`;
+    await new Promise(r=>setTimeout(r, 700));
+  }
+
+  wrap.innerHTML = '<p style="text-align:center; font-family:\'Oswald\',sans-serif; font-size:13px; letter-spacing:2px; color:var(--lane-gold); margin-bottom:6px;">🎡 輪盤決定得獎者</p><div id="reWheelDisplay"></div>';
+  const wheelDisplay = document.getElementById('reWheelDisplay');
+  const pool = revealOrder.map(e=>e.name);
+  for(let i=0;i<winners.length;i++){
+    const winnerName = winners[i];
+    await new Promise(resolve=>{
+      const el = document.createElement('p');
+      el.style.cssText = 'text-align:center; font-size:22px; font-weight:900; margin:14px 0; color:var(--lane-gold);';
+      wheelDisplay.appendChild(el);
+      let ticks = 0;
+      const maxTicks = 18;
+      const interval = setInterval(()=>{
+        const randomName = pool.length ? pool[Math.floor(Math.random()*pool.length)] : winnerName;
+        el.textContent = '🎡 ' + randomName;
+        ticks++;
+        if(ticks > maxTicks){
+          clearInterval(interval);
+          el.textContent = '🎉 ' + winnerName;
+          resolve();
+        }
+      }, 90);
+    });
+  }
+}
+
+function renderRedEnvelopeStaticResult(game, submitted){
+  const wrap = document.getElementById('redEnvelopeBody');
+  if(submitted){
+    const won = (game.winners || []).includes(submitted.name);
+    wrap.innerHTML = `
+      <p style="text-align:center; font-size:16px; font-weight:700; margin-top:20px; color:${won?'var(--lane-gold)':'var(--ink-soft)'};">
+        ${won ? '🎉 恭喜中獎！' : '😢 銘謝惠顧'}　代表：${escapeHtml(submitted.name)}（轉速值 ${submitted.clicks}）
+      </p>
+      ${(game.winners && game.winners.length) ? `<p class="empty-note" style="text-align:center; margin-top:10px;">得獎名單：${game.winners.map(escapeHtml).join('、')}</p>` : '<p class="empty-note" style="text-align:center;">主辦方還沒開獎。</p>'}
+    `;
+  } else {
+    wrap.innerHTML = `<p class="empty-note">這場轉速大戰已經結束了。${(game.winners && game.winners.length) ? `得獎名單：${game.winners.map(escapeHtml).join('、')}` : '尚未開獎。'}</p>`;
+  }
+}
+
+// Plays the full reveal ceremony exactly once per device per gameId (tracked
+// via localStorage) so revisiting the page or polling refreshes doesn't
+// replay it — after the first watch, just show the static final result.
+function showRedEnvelopeResult(game, submitted){
+  const ceremonyKey = 'redEnvelopeCeremonyPlayed_' + game.gameId;
+  const alreadyPlayed = localStorage.getItem(ceremonyKey);
+  if(!alreadyPlayed && game.revealOrder && game.revealOrder.length > 0){
+    localStorage.setItem(ceremonyKey, 'true');
+    playRedEnvelopeCeremony(game).then(()=> renderRedEnvelopeStaticResult(game, submitted));
+  } else {
+    renderRedEnvelopeStaticResult(game, submitted);
+  }
+}
+
 function renderRedEnvelopeBody(){
   const game = state.redEnvelopeGame;
   const wrap = document.getElementById('redEnvelopeBody');
@@ -1632,7 +1773,7 @@ function renderRedEnvelopeBody(){
 
   if(!game || !game.eventId || !game.gameId || !Array.isArray(game.roster) || game.roster.length === 0){
     subtitle.textContent = '';
-    wrap.innerHTML = '<p class="empty-note">搶紅包遊戲尚未開放，請洽主辦方。</p>';
+    wrap.innerHTML = '<p class="empty-note">轉速大戰遊戲尚未開放，請洽主辦方。</p>';
     return;
   }
   subtitle.textContent = `獎品：${game.prizeName || '神秘獎品'}　共 ${game.prizeCount} 個名額`;
@@ -1643,21 +1784,15 @@ function renderRedEnvelopeBody(){
 
   if(submitted){
     if(game.status === 'ended'){
-      const won = (game.winners || []).includes(submitted.name);
-      wrap.innerHTML = `
-        <p style="text-align:center; font-size:16px; font-weight:700; margin-top:20px; color:${won?'var(--lane-gold)':'var(--ink-soft)'};">
-          ${won ? '🎉 恭喜中獎！' : '😢 銘謝惠顧'}　代表：${escapeHtml(submitted.name)}（點了 ${submitted.clicks} 下）
-        </p>
-        ${(game.winners && game.winners.length) ? `<p class="empty-note" style="text-align:center; margin-top:10px;">得獎名單：${game.winners.map(escapeHtml).join('、')}</p>` : '<p class="empty-note" style="text-align:center;">主辦方還沒開獎。</p>'}
-      `;
+      showRedEnvelopeResult(game, submitted);
     } else {
-      wrap.innerHTML = `<p class="empty-note" style="text-align:center; margin-top:20px;">你已經參加過這一場了，代表：${escapeHtml(submitted.name)}，點了 ${submitted.clicks} 下。等主辦方開獎。</p>`;
+      wrap.innerHTML = `<p class="empty-note" style="text-align:center; margin-top:20px;">你已經參加過這一場了，代表：${escapeHtml(submitted.name)}，轉速值 ${submitted.clicks}。等主辦方開獎。</p>`;
     }
     return;
   }
 
   if(game.status === 'ended'){
-    wrap.innerHTML = `<p class="empty-note">這場搶紅包已經結束了。${(game.winners && game.winners.length) ? `得獎名單：${game.winners.map(escapeHtml).join('、')}` : '尚未開獎。'}</p>`;
+    showRedEnvelopeResult(game, null);
     return;
   }
 
@@ -1669,7 +1804,9 @@ function renderRedEnvelopeBody(){
   const startTime = new Date(game.startAt).getTime();
   const endTime = startTime + (game.durationSeconds || 15) * 1000;
   if(Date.now() >= endTime){
-    wrap.innerHTML = '<p class="empty-note">這一輪搶紅包時間已經到了，你來晚了一步，請等主辦方開下一輪。</p>';
+    wrap.innerHTML = '<p class="empty-note">這一輪轉速大戰時間已經到了，統計中，請稍候幾秒…</p>';
+    const waitMs = Math.max(0, (endTime + 5200) - Date.now());
+    setTimeout(async ()=>{ await maybeAutoDrawRedEnvelope(game.gameId); renderRedEnvelopeBody(); }, waitMs);
     return;
   }
   startRedEnvelopeTicker(game, startTime, endTime);
@@ -2448,19 +2585,32 @@ function renderRedEnvelopeAdmin(){
   if(entries.length === 0){
     logWrap.innerHTML = '';
   } else {
-    logWrap.innerHTML = '<p class="empty-note" style="margin-bottom:6px;">點擊排行（次數越多，中獎機率越高）</p>' +
+    logWrap.innerHTML = '<p class="empty-note" style="margin-bottom:6px;">轉速排行（轉速越高，中獎機率越高）</p>' +
       entries.map(([name, count])=> `<div class="empty-note" style="padding:4px 0; border-bottom:1px solid var(--line);">${escapeHtml(name)}　${count} 下</div>`).join('');
   }
 }
 
+let redEnvelopeAdminWatcher = null;
 document.getElementById('openRedEnvelopeAdminBtn').addEventListener('click', ()=>{
   renderRedEnvelopeAdmin();
   document.getElementById('adminEventList').classList.add('hidden');
   document.getElementById('adminRedEnvelopeView').classList.remove('hidden');
+  if(redEnvelopeAdminWatcher) clearInterval(redEnvelopeAdminWatcher);
+  redEnvelopeAdminWatcher = setInterval(async ()=>{
+    const game = editingState.redEnvelopeGame;
+    if(game && game.gameId && game.status === 'pending'){
+      await maybeAutoDrawRedEnvelope(game.gameId);
+      if(state.redEnvelopeGame && state.redEnvelopeGame.gameId === game.gameId && state.redEnvelopeGame.status === 'ended'){
+        editingState.redEnvelopeGame = JSON.parse(JSON.stringify(state.redEnvelopeGame));
+        renderRedEnvelopeAdmin();
+      }
+    }
+  }, 3000);
 });
 document.getElementById('backFromRedEnvelopeAdmin').addEventListener('click', ()=>{
   document.getElementById('adminRedEnvelopeView').classList.add('hidden');
   document.getElementById('adminEventList').classList.remove('hidden');
+  if(redEnvelopeAdminWatcher){ clearInterval(redEnvelopeAdminWatcher); redEnvelopeAdminWatcher = null; }
   renderAdminEventList();
 });
 document.getElementById('saveRedEnvelopeConfigBtn').addEventListener('click', async ()=>{
@@ -2531,6 +2681,13 @@ document.getElementById('drawRedEnvelopeBtn').addEventListener('click', async ()
     errEl.style.display = 'block';
     return;
   }
+  // Reveal order: everyone who clicked, sorted from fewest to most tickets —
+  // the public ceremony plays through this list for suspense before the
+  // actual (weighted-random) winners are revealed via the wheel spin.
+  game.revealOrder = Object.entries(game.clicks)
+    .filter(([n,c])=> c > 0)
+    .sort((a,b)=> a[1]-b[1])
+    .map(([n,c])=> ({ name:n, clicks:c }));
   game.status = 'ended';
   game.winners = drawWeightedWinners(game.clicks, game.prizeCount || 0);
   try{
@@ -2975,10 +3132,10 @@ function nextPow2(n){
   return p;
 }
 
-// 48 is handled specially (it halves cleanly down to a 3-person round-robin
-// final: 48→24→12→6→3). Every other size is already a power of two.
+// 12/24/48/96 halve cleanly down to a 3-person round-robin final
+// (e.g. 96→48→24→12→6→3). Every other size is already a power of two.
 function capacityFor(size){
-  return (size === 12 || size === 24 || size === 48) ? size : nextPow2(size);
+  return (size === 12 || size === 24 || size === 48 || size === 96) ? size : nextPow2(size);
 }
 
 function shuffleArray(arr){
@@ -3071,7 +3228,7 @@ function generateBracket(ev, size){
     ev.bracket = {
       size, capacity: capacityFor(size), slots: buildSlotsArray(ev, size),
       picks: {}, roundRobinPicks: {}, scores: {}, roundRobinScores: {},
-      finalStage: (size === 12 || size === 24 || size === 48) ? 'roundrobin' : 'single'
+      finalStage: (size === 12 || size === 24 || size === 48 || size === 96) ? 'roundrobin' : 'single'
     };
   }
   ev.format = 'elimination';
@@ -4723,6 +4880,8 @@ function toggleSizeInputForFormat(format){
   if(note24) note24.classList.toggle('hidden', format === 'doubleElim');
   const note12 = document.getElementById('bracketSize12Note');
   if(note12) note12.classList.toggle('hidden', format === 'doubleElim');
+  const note96 = document.getElementById('bracketSize96Note');
+  if(note96) note96.classList.toggle('hidden', format === 'doubleElim');
 }
 document.querySelectorAll('input[name="tourFormat"]').forEach(r=>{
   r.addEventListener('change', ()=> toggleSizeInputForFormat(r.value));
@@ -4958,7 +5117,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
     if(realNames.length === 3){
       ev.bracket = { size, capacity:3, slots: realNames, picks:{}, roundRobinPicks:{}, scores:{}, roundRobinScores:{}, finalStage:'roundrobin' };
     } else {
-      ev.bracket = { size, capacity, slots, picks:{}, roundRobinPicks:{}, scores:{}, roundRobinScores:{}, finalStage: (size===12 || size===24 || size===48) ? 'roundrobin' : 'single' };
+      ev.bracket = { size, capacity, slots, picks:{}, roundRobinPicks:{}, scores:{}, roundRobinScores:{}, finalStage: (size===12 || size===24 || size===48 || size===96) ? 'roundrobin' : 'single' };
     }
     ev.format = 'elimination';
     ev.started = true;
@@ -5507,6 +5666,15 @@ async function pollForUpdates(){
       if(ev) refreshEventDetailInPlace(ev);
     } else if(!document.getElementById('leaderboardView').classList.contains('hidden')){
       renderLeaderboard(document.getElementById('leaderboardSearchInput').value);
+    } else if(!document.getElementById('slotGameView').classList.contains('hidden')){
+      // Don't rebuild mid-spin (the stop buttons would vanish under the player's thumb).
+      if(!document.getElementById('slotStopBtns')) renderSlotGameBody();
+    } else if(!document.getElementById('redEnvelopeView').classList.contains('hidden')){
+      // The local ticker (once started) drives its own countdown/click phase off
+      // game.startAt without needing the server again — only re-render here
+      // while we're still idle/waiting, so a poll can never wipe out someone's
+      // in-progress click count.
+      if(!reTicker) renderRedEnvelopeBody();
     }
   }catch(e){
     // silent — will just try again on the next interval
