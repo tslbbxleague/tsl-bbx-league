@@ -336,6 +336,12 @@
     display:flex; align-items:center; justify-content:center; font-size:34px;
   }
   .slot-stop-btns{ display:flex; gap:8px; margin-top:14px; }
+  .manual-checklist-item{
+    display:flex; align-items:flex-start; gap:10px; padding:11px 4px; border-bottom:1px solid var(--line);
+    font-size:14px; line-height:1.5; cursor:pointer;
+  }
+  .manual-checklist-item input[type="checkbox"]{ margin-top:3px; flex-shrink:0; width:18px; height:18px; accent-color:var(--lane-gold); }
+  .manual-checklist-item.checked-item span{ text-decoration:line-through; color:var(--ink-soft); }
   .slot-stop-btns button{ flex:1; }
   .slot-stop-btns button:disabled{ opacity:0.35; }
   .backup-chip.slot-chip-won{ border-color:var(--lane-gold); color:var(--lane-gold); background:rgba(240,193,67,0.12); }
@@ -743,6 +749,7 @@
       <button class="btn secondary" id="openAvatarBtn">👤 選手資料設定</button>
       <button class="btn secondary" id="openSlotGameAdminBtn">🎰 拉霸機設定</button>
       <button class="btn secondary" id="openRedEnvelopeAdminBtn">🌀 轉速大戰設定</button>
+      <button class="btn secondary" id="openManualChecklistBtn">📖 比賽教戰手冊</button>
       <button class="btn gold" id="addEventBtn">＋ 新增賽事</button>
     </div>
   </div>
@@ -903,6 +910,21 @@
   <div id="redEnvelopeClickLogWrap" style="margin-top:10px;"></div>
 </div>
 
+<!-- ADMIN: coaching manual / pre-match checklist -->
+<div class="admin-wrap hidden" id="adminManualChecklistView">
+  <div class="admin-toolbar">
+    <button class="btn secondary" id="backFromManualChecklist">← 返回賽事列表</button>
+  </div>
+  <div class="event-title-block">
+    <h2 style="font-size:18px;">📖 比賽教戰手冊</h2>
+  </div>
+  <div class="col" style="margin-bottom:16px;">
+    <label class="field-label">選擇賽事</label>
+    <select class="roster-input" id="manualChecklistEventSelect"><option value="">－ 請選擇賽事 －</option></select>
+  </div>
+  <div id="manualChecklistBody"></div>
+</div>
+
 <!-- ADMIN: ROSTER EDITOR FOR ONE EVENT -->
 <div class="admin-wrap hidden" id="adminRosterEditor">
   <div class="admin-toolbar">
@@ -1024,9 +1046,19 @@
           <label for="winThresholdInput" style="font-size:13px; color:var(--ink-soft);">獲勝門檻（幾分獲勝，4～10 分）</label>
           <input type="number" id="winThresholdInput" min="4" max="10" value="4" style="width:70px; padding:6px 8px; border:1px solid var(--line); border-radius:3px; background:var(--paper); color:var(--ink); font-size:13px;">
         </div>
+        <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px; cursor:pointer;">
+          <input type="checkbox" id="seedTslCheckbox"> TSL分散
+        </label>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn gold small" id="autoShuffleBtn">🔀 隨機分配</button>
           <button class="btn secondary small" id="openManualAssignBtn">✋ 手動分配</button>
+          <button class="btn secondary small" id="orderAssignBtn">📋 依名單順序分配</button>
+        </div>
+
+        <div id="orderConfirmRow" class="shuffle-confirm hidden">
+          <p style="margin:0 0 10px;">確定要依照名單目前的順序分配嗎？（不會打散，第 1 個名字對到第 1 個位置，以此類推）這會重新產生賽程，先前已選出的勝負紀錄將會清空。</p>
+          <button class="btn gold small" id="confirmOrderAssignBtn">確定套用</button>
+          <button class="btn secondary small" id="cancelOrderAssignBtn">取消</button>
         </div>
 
         <div id="shuffleConfirmRow" class="shuffle-confirm hidden">
@@ -2724,6 +2756,158 @@ document.getElementById('resetRedEnvelopeBtn').addEventListener('click', async (
   }
 });
 
+// ---------- pre-match coaching manual / checklist ----------
+function getEventManualSummary(ev){
+  let size = null, capacity = null;
+  if(ev.bracket){ size = ev.bracket.size; capacity = ev.bracket.capacity; }
+  else if(ev.doubleElim){ size = ev.doubleElim.size; capacity = ev.doubleElim.wb ? ev.doubleElim.wb.slots.length : null; }
+  else if(ev.swiss){ size = ev.swiss.size || (ev.swiss.entrants ? ev.swiss.entrants.length : null); capacity = ev.swiss.entrants ? ev.swiss.entrants.length : null; }
+  else if(ev.group){ size = ev.group.size; capacity = ev.group.groups ? ev.group.groups.flat().length : null; }
+  const actualCount = getEntrantNames(ev).length;
+  const byeCount = capacity ? Math.max(capacity - actualCount, 0) : 0;
+  return { size: size || actualCount, actualCount, byeCount };
+}
+
+function buildManualChecklistItems(ev, cfg){
+  const summary = getEventManualSummary(ev);
+  const typeLabel = ev.type === 'team' ? '團體賽' : '個人賽';
+  const ruleLabel = cfg.ruleVersion === 'special' ? `特殊賽事規則：${cfg.specialRuleNote || '（尚未填寫說明）'}` : 'G3 12版本規章';
+  const lotteryLabel = cfg.hasLottery ? `有抽獎活動${cfg.lotteryNote ? '：' + cfg.lotteryNote : ''}` : '本場無抽獎活動';
+  return [
+    '確認選手已完成報到（雙方本人皆在場）',
+    '確認候補遞補流程已處理（如有正取選手缺席）',
+    `宣讀賽制規模：${summary.size} 人賽制，實際到場 ${summary.actualCount} 人${summary.byeCount>0 ? `，輪空 ${summary.byeCount} 人` : ''}`,
+    `宣讀賽事類別：${typeLabel}`,
+    `宣讀規則依據：${ruleLabel}`,
+    `宣讀獎品說明：${cfg.prizeDescription || '（尚未填寫獎品說明）'}`,
+    `宣讀抽獎公告：${lotteryLabel}`,
+    '說明發射爭議處理：選手發射當下如碰手、碰盤或遭場外干擾，請立即提出，事後不予受理。雙方碰手若不影響發射且雙方無異議，判定為正常發射；如多次過度影響對方發射，裁判有權調整雙方發射姿勢與位置',
+    '提醒雙方選手上場前備妥戰鬥盒',
+    '說明零件磨損處理：零件過度磨損時裁判會請示更換相同零件，請自備備用零件，避免屆時無零件可替換；若無相關零件可替換，該顆異常陀螺須更換為 TSL 指定黃色忍者 080Y 應戰',
+    '說明重複零件處理：上場時如誤用相同零件，該顆使用重複零件的陀螺須更換為 TSL 指定黃色忍者 080Y 應戰',
+    '說明判決依據：相關判決以裁判現場判定為準，裁判可搭配輔助錄影協助判決；外場人員與選手請勿干擾裁判判決；遇極度接近、難以判定的情況，裁判可暫停比賽並與其他裁判召開會議決議'
+  ];
+}
+
+let manualChecklistCheckedState = {};
+
+function renderManualChecklistItems(ev){
+  const wrap = document.getElementById('manualChecklistItems');
+  const items = buildManualChecklistItems(ev, ev.manualConfig || {});
+  wrap.innerHTML = items.map((text, i)=>`
+    <label class="manual-checklist-item${manualChecklistCheckedState[i] ? ' checked-item' : ''}">
+      <input type="checkbox" data-idx="${i}" ${manualChecklistCheckedState[i] ? 'checked' : ''}>
+      <span>${escapeHtml(text)}</span>
+    </label>
+  `).join('');
+  wrap.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      manualChecklistCheckedState[cb.dataset.idx] = cb.checked;
+      cb.closest('.manual-checklist-item').classList.toggle('checked-item', cb.checked);
+    });
+  });
+}
+
+function renderManualChecklistBody(ev){
+  const wrap = document.getElementById('manualChecklistBody');
+  if(!ev){ wrap.innerHTML = ''; return; }
+  ev.manualConfig = ev.manualConfig || { ruleVersion:'g3-12', specialRuleNote:'', prizeDescription:'', hasLottery:false, lotteryNote:'' };
+  const cfg = ev.manualConfig;
+  wrap.innerHTML = `
+    <div class="admin-subsection">
+      <div class="sub-head"><h4>這場賽事的設定</h4></div>
+      <div class="cols admin-list-editor">
+        <div class="col">
+          <label class="field-label">規則依據</label>
+          <select class="roster-input" id="manualRuleVersionSelect">
+            <option value="g3-12" ${cfg.ruleVersion!=='special'?'selected':''}>G3 12版本規章</option>
+            <option value="special" ${cfg.ruleVersion==='special'?'selected':''}>特殊賽事規則</option>
+          </select>
+        </div>
+        <div class="col" id="manualSpecialRuleCol" style="${cfg.ruleVersion==='special'?'':'display:none;'}">
+          <label class="field-label">特殊規則說明</label>
+          <input type="text" class="roster-input" id="manualSpecialRuleInput" value="${escapeAttr(cfg.specialRuleNote||'')}" placeholder="說明本場特殊規則">
+        </div>
+      </div>
+      <div class="cols admin-list-editor">
+        <div class="col">
+          <label class="field-label">獎品說明</label>
+          <input type="text" class="roster-input" id="manualPrizeInput" value="${escapeAttr(cfg.prizeDescription||'')}" placeholder="例如：冠軍獎盃＋獎金">
+        </div>
+        <div class="col">
+          <label style="display:flex; align-items:center; gap:6px; margin-top:22px; font-size:13px; cursor:pointer;">
+            <input type="checkbox" id="manualLotteryCheckbox" ${cfg.hasLottery?'checked':''}> 本場搭配抽獎活動
+          </label>
+        </div>
+      </div>
+      <div class="col" id="manualLotteryNoteCol" style="${cfg.hasLottery?'':'display:none;'} margin-bottom:10px;">
+        <label class="field-label">抽獎說明</label>
+        <input type="text" class="roster-input" id="manualLotteryNoteInput" value="${escapeAttr(cfg.lotteryNote||'')}" placeholder="說明抽獎方式或獎項">
+      </div>
+      <button class="btn gold small" id="saveManualConfigBtn">儲存這場設定</button>
+      <p class="referee-error" id="manualConfigError"></p>
+    </div>
+    <div class="admin-subsection">
+      <div class="sub-head"><h4>✅ 教戰清單（念完打勾）</h4></div>
+      <div id="manualChecklistItems"></div>
+      <button class="btn secondary small" id="resetManualChecklistBtn" style="margin-top:10px;">🔄 全部取消勾選（換下一組選手前重置）</button>
+    </div>
+  `;
+  renderManualChecklistItems(ev);
+
+  document.getElementById('manualRuleVersionSelect').addEventListener('change', (e)=>{
+    document.getElementById('manualSpecialRuleCol').style.display = e.target.value === 'special' ? '' : 'none';
+  });
+  document.getElementById('manualLotteryCheckbox').addEventListener('change', (e)=>{
+    document.getElementById('manualLotteryNoteCol').style.display = e.target.checked ? '' : 'none';
+  });
+  document.getElementById('saveManualConfigBtn').addEventListener('click', async ()=>{
+    const errEl = document.getElementById('manualConfigError');
+    errEl.style.display = 'none';
+    const specialInput = document.getElementById('manualSpecialRuleInput');
+    const lotteryNoteInput = document.getElementById('manualLotteryNoteInput');
+    ev.manualConfig = {
+      ruleVersion: document.getElementById('manualRuleVersionSelect').value,
+      specialRuleNote: specialInput ? specialInput.value.trim() : '',
+      prizeDescription: document.getElementById('manualPrizeInput').value.trim(),
+      hasLottery: document.getElementById('manualLotteryCheckbox').checked,
+      lotteryNote: lotteryNoteInput ? lotteryNoteInput.value.trim() : ''
+    };
+    try{
+      await safeSaveEditingState();
+      renderManualChecklistItems(ev);
+    }catch(e){
+      errEl.textContent = '儲存失敗，請稍後再試。';
+      errEl.style.display = 'block';
+    }
+  });
+  document.getElementById('resetManualChecklistBtn').addEventListener('click', ()=>{
+    manualChecklistCheckedState = {};
+    renderManualChecklistItems(ev);
+  });
+}
+
+document.getElementById('openManualChecklistBtn').addEventListener('click', ()=>{
+  const sel = document.getElementById('manualChecklistEventSelect');
+  sel.innerHTML = '<option value="">－ 請選擇賽事 －</option>' + editingState.events.map(e=>
+    `<option value="${e.id}">${escapeHtml(e.name)}</option>`
+  ).join('');
+  manualChecklistCheckedState = {};
+  document.getElementById('manualChecklistBody').innerHTML = '';
+  document.getElementById('adminEventList').classList.add('hidden');
+  document.getElementById('adminManualChecklistView').classList.remove('hidden');
+});
+document.getElementById('backFromManualChecklist').addEventListener('click', ()=>{
+  document.getElementById('adminManualChecklistView').classList.add('hidden');
+  document.getElementById('adminEventList').classList.remove('hidden');
+  renderAdminEventList();
+});
+document.getElementById('manualChecklistEventSelect').addEventListener('change', (e)=>{
+  const ev = editingState.events.find(ev=>ev.id===e.target.value);
+  manualChecklistCheckedState = {};
+  renderManualChecklistBody(ev);
+});
+
 function renderAvatarAdmin(){
   editingState.playerAvatars = editingState.playerAvatars || {};
   const wrap = document.getElementById('avatarListWrap');
@@ -3217,16 +3401,83 @@ function buildSlotsArray(ev, size){
   return slots;
 }
 
-function generateBracket(ev, size){
+// Spreads names starting with "TSL" across distinct round-1 matches so they
+// don't meet each other in the first round, then fills everything else with
+// a normal shuffle (and spreads any leftover byes one-per-match, same as
+// the fully-random builder).
+function buildSlotsArraySeededTsl(ev, size){
+  const capacity = capacityFor(size);
+  const names = getEntrantNamesForGeneration(ev).slice(0, size);
+  const isTsl = (n)=> (n || '').trim().toUpperCase().startsWith('TSL');
+  const tslNames = shuffleArray(names.filter(isTsl));
+  const otherNames = shuffleArray(names.filter(n=>!isTsl(n)));
+  const totalMatches = capacity / 2;
+  const slots = new Array(capacity).fill(null);
+  const matchOrder = shuffleArray(Array.from({length: totalMatches}, (_, i) => i));
+
+  let idx = 0;
+  while(idx < tslNames.length){
+    const m = matchOrder[idx % totalMatches];
+    const a = m*2, b = m*2+1;
+    if(slots[a] === null) slots[a] = tslNames[idx];
+    else if(slots[b] === null) slots[b] = tslNames[idx];
+    else {
+      const openIdx = slots.findIndex(s=>s===null);
+      if(openIdx === -1) break;
+      slots[openIdx] = tslNames[idx];
+    }
+    idx++;
+  }
+
+  const emptySlotIdxs = shuffleArray(slots.map((v,i)=> v===null ? i : null).filter(v=>v!==null));
+  const byeCount = Math.max(emptySlotIdxs.length - otherNames.length, 0);
+  if(byeCount === 0){
+    emptySlotIdxs.forEach((slotIdx, i)=>{ slots[slotIdx] = otherNames[i]; });
+  } else {
+    const emptyByMatch = {};
+    emptySlotIdxs.forEach(slotIdx=>{
+      const m = Math.floor(slotIdx/2);
+      (emptyByMatch[m] = emptyByMatch[m] || []).push(slotIdx);
+    });
+    const matchKeys = shuffleArray(Object.keys(emptyByMatch));
+    let byesLeft = byeCount, otherIdx = 0;
+    matchKeys.forEach(mk=>{
+      const slotIdxs = emptyByMatch[mk];
+      if(byesLeft > 0 && slotIdxs.length >= 1){
+        slotIdxs.pop(); // this slot is left as a bye
+        byesLeft--;
+      }
+      slotIdxs.forEach(s=>{ slots[s] = otherNames[otherIdx++]; });
+    });
+  }
+  return slots;
+}
+
+// No shuffling at all — whatever order the roster list is currently in maps
+// straight onto the bracket slots, 1st name to 1st slot and so on.
+function buildSlotsArrayInOrder(ev, size){
+  const capacity = capacityFor(size);
+  const names = getEntrantNamesForGeneration(ev).slice(0, size);
+  const slots = new Array(capacity).fill(null);
+  for(let i=0;i<names.length && i<capacity;i++) slots[i] = names[i];
+  return slots;
+}
+
+function generateBracket(ev, size, mode){
   const realCount = Math.min(getEntrantNamesForGeneration(ev).length, size);
   if(realCount === 3){
+    const names = getEntrantNamesForGeneration(ev).slice(0, 3);
     ev.bracket = {
-      size, capacity: 3, slots: shuffleArray(getEntrantNamesForGeneration(ev).slice(0, 3)),
+      size, capacity: 3, slots: mode === 'inOrder' ? names : shuffleArray(names),
       picks: {}, roundRobinPicks: {}, scores: {}, roundRobinScores: {}, finalStage: 'roundrobin'
     };
   } else {
+    let slots;
+    if(mode === 'inOrder') slots = buildSlotsArrayInOrder(ev, size);
+    else if(mode === 'seededTsl') slots = buildSlotsArraySeededTsl(ev, size);
+    else slots = buildSlotsArray(ev, size);
     ev.bracket = {
-      size, capacity: capacityFor(size), slots: buildSlotsArray(ev, size),
+      size, capacity: capacityFor(size), slots,
       picks: {}, roundRobinPicks: {}, scores: {}, roundRobinScores: {},
       finalStage: (size === 12 || size === 24 || size === 48 || size === 96) ? 'roundrobin' : 'single'
     };
@@ -4893,6 +5144,7 @@ function renderBracketAdminSection(ev){
   const lockedNotice = document.getElementById('lockedNotice');
   const setupDiv = document.getElementById('bracketSetup');
   document.getElementById('shuffleConfirmRow').classList.add('hidden');
+  document.getElementById('orderConfirmRow').classList.add('hidden');
   document.getElementById('manualAssignPanel').classList.add('hidden');
   document.getElementById('manualConfirmRow').classList.add('hidden');
   // 分組循環賽 only makes sense for individual events
@@ -4974,6 +5226,7 @@ document.getElementById('toggleLockBtn').addEventListener('click', ()=>{
 
 document.getElementById('autoShuffleBtn').addEventListener('click', ()=>{
   document.getElementById('manualAssignPanel').classList.add('hidden');
+  document.getElementById('orderConfirmRow').classList.add('hidden');
   document.getElementById('shuffleConfirmRow').classList.remove('hidden');
 });
 document.getElementById('cancelShuffleBtn').addEventListener('click', ()=>{
@@ -5009,11 +5262,35 @@ document.getElementById('confirmShuffleBtn').addEventListener('click', ()=>{
   syncEntrantSourceFromDOM(ev);
   const thresholdInput = parseInt(document.getElementById('winThresholdInput').value, 10);
   ev.winThreshold = (thresholdInput >= 4 && thresholdInput <= 10) ? thresholdInput : 4;
+  const seedTsl = document.getElementById('seedTslCheckbox').checked;
   if(format === 'swiss'){ generateSwiss(ev, size); }
   else if(format === 'group'){ generateGroupStage(ev, size); }
   else if(format === 'doubleElim'){ generateDoubleElim(ev, size); }
-  else { generateBracket(ev, size); }
+  else { generateBracket(ev, size, seedTsl ? 'seededTsl' : 'random'); }
   document.getElementById('shuffleConfirmRow').classList.add('hidden');
+  renderBracketAdminSection(ev);
+});
+document.getElementById('orderAssignBtn').addEventListener('click', ()=>{
+  document.getElementById('manualAssignPanel').classList.add('hidden');
+  document.getElementById('shuffleConfirmRow').classList.add('hidden');
+  document.getElementById('orderConfirmRow').classList.remove('hidden');
+});
+document.getElementById('cancelOrderAssignBtn').addEventListener('click', ()=>{
+  document.getElementById('orderConfirmRow').classList.add('hidden');
+});
+document.getElementById('confirmOrderAssignBtn').addEventListener('click', ()=>{
+  const ev = editingState.events.find(e=>e.id===currentAdminEventId);
+  if(!ev) return;
+  const format = getSelectedFormat();
+  const size = getSelectedSize(format);
+  syncEntrantSourceFromDOM(ev);
+  const thresholdInput = parseInt(document.getElementById('winThresholdInput').value, 10);
+  ev.winThreshold = (thresholdInput >= 4 && thresholdInput <= 10) ? thresholdInput : 4;
+  if(format === 'swiss'){ generateSwiss(ev, size); }
+  else if(format === 'group'){ generateGroupStage(ev, size); }
+  else if(format === 'doubleElim'){ generateDoubleElim(ev, size); }
+  else { generateBracket(ev, size, 'inOrder'); }
+  document.getElementById('orderConfirmRow').classList.add('hidden');
   renderBracketAdminSection(ev);
 });
 
@@ -5050,6 +5327,7 @@ document.getElementById('openManualAssignBtn').addEventListener('click', ()=>{
   const capacity = resolvedCapacity(ev, format, size);
   buildManualSlotsGrid(ev, capacity);
   document.getElementById('shuffleConfirmRow').classList.add('hidden');
+  document.getElementById('orderConfirmRow').classList.add('hidden');
   document.getElementById('manualConfirmRow').classList.add('hidden');
   document.getElementById('manualAssignPanel').classList.remove('hidden');
 });
@@ -5131,7 +5409,7 @@ document.getElementById('confirmManualAssignBtn').addEventListener('click', ()=>
 });
 
 // ---------- navigation ----------
-const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView','adminAliasView','adminAvatarView','slotGameView','adminSlotGameView','redEnvelopeView','adminRedEnvelopeView'];
+const TOP_LEVEL_VIEWS = ['publicEventList','publicEventDetail','gateView','adminEventList','adminRosterEditor','refereeGateView','refereeEventList','refereeMatchEntryView','leaderboardView','adminAliasView','adminAvatarView','slotGameView','adminSlotGameView','redEnvelopeView','adminRedEnvelopeView','adminManualChecklistView'];
 function hideAllViews(){
   TOP_LEVEL_VIEWS.forEach(id=> document.getElementById(id).classList.add('hidden'));
   document.getElementById('publicFooter').classList.add('hidden');
