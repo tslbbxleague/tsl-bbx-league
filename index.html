@@ -1047,7 +1047,7 @@
           <input type="number" id="winThresholdInput" min="4" max="10" value="4" style="width:70px; padding:6px 8px; border:1px solid var(--line); border-radius:3px; background:var(--paper); color:var(--ink); font-size:13px;">
         </div>
         <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px; cursor:pointer;">
-          <input type="checkbox" id="seedTslCheckbox"> TSL分散
+          <input type="checkbox" id="seedTslCheckbox"> 確認名單完整
         </label>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn gold small" id="autoShuffleBtn">🔀 隨機分配</button>
@@ -3041,6 +3041,7 @@ function renderAdminEventList(){
       const btn = e.currentTarget;
       if(btn.dataset.confirming === 'true'){
         const id = btn.dataset.id;
+        deletedEventIdsThisSession.add(id);
         editingState.events = editingState.events.filter(x=>x.id!==id);
         renderAdminEventList();
         return;
@@ -5833,6 +5834,7 @@ document.getElementById('addBackupTeamBtn').addEventListener('click', ()=>{
 // editor (where the admin's own just-made clicks should win instead). This
 // stops a stale admin tab from silently overwriting referee-entered scores
 // just because it had been open for a while before saving.
+let deletedEventIdsThisSession = new Set();
 async function safeSaveEditingState(){
   const { data, error } = await sb.from('roster_data').select('value').eq('key', STORAGE_KEY).maybeSingle();
   if(error) throw error;
@@ -5849,8 +5851,10 @@ async function safeSaveEditingState(){
       ev.checkins = freshEv.checkins;
       ev.locked = freshEv.locked;
     });
-    // pick up events created elsewhere since this admin session started
+    // Pick up events created elsewhere since this admin session started —
+    // but never resurrect one this session deliberately deleted.
     freshState.events.forEach(freshEv=>{
+      if(deletedEventIdsThisSession.has(freshEv.id)) return;
       if(!editingState.events.find(e=>e.id===freshEv.id)) editingState.events.push(freshEv);
     });
   }
