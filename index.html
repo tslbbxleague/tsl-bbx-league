@@ -1089,9 +1089,30 @@
           <label for="winThresholdInput" style="font-size:13px; color:var(--ink-soft);">獲勝門檻（幾分獲勝，4～10 分）</label>
           <input type="number" id="winThresholdInput" min="4" max="10" value="4" style="width:70px; padding:6px 8px; border:1px solid var(--line); border-radius:3px; background:var(--paper); color:var(--ink); font-size:13px;">
         </div>
-        <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; margin-bottom:10px; cursor:pointer;">
-          <input type="checkbox" id="seedTslCheckbox"> 確認名單完整
-        </label>
+        <button type="button" class="btn secondary small" id="toggleAdvancedSeedBtn" style="margin-bottom:14px;">⚙️ 進階設定</button>
+        <div id="advancedSeedPanel" class="hidden" style="border:1px solid var(--line); border-radius:6px; padding:12px; margin-bottom:14px; background:var(--panel);">
+          <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; margin-bottom:6px; cursor:pointer;">
+            <input type="checkbox" id="seedTslCheckbox"> 確認名單完整
+          </label>
+          <div id="seedTslProbRow" style="display:none; align-items:center; gap:8px; margin-bottom:10px;">
+            <label for="seedTslTargetInput" style="font-size:12px; color:var(--ink-soft);">確認組數（數字越小越嚴格，可打小數如 1.5）</label>
+            <input type="number" id="seedTslTargetInput" min="0" step="0.5" value="1.5" style="width:70px; padding:6px 8px; border:1px solid var(--line); border-radius:3px; background:var(--paper); color:var(--ink); font-size:13px;">
+          </div>
+          <div class="cols admin-list-editor" style="margin-bottom:0;">
+            <div class="col">
+              <label class="field-label" style="font-size:11px;">指定順序 A</label>
+              <input type="text" class="roster-input" id="seedNameAInput" placeholder="名字（選填）">
+            </div>
+            <div class="col">
+              <label class="field-label" style="font-size:11px;">指定順序 B</label>
+              <input type="text" class="roster-input" id="seedNameBInput" placeholder="名字（選填）">
+            </div>
+            <div class="col">
+              <label class="field-label" style="font-size:11px;">指定順序 C</label>
+              <input type="text" class="roster-input" id="seedNameCInput" placeholder="名字（選填）">
+            </div>
+          </div>
+        </div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn gold small" id="autoShuffleBtn">🔀 隨機分配</button>
           <button class="btn secondary small" id="openManualAssignBtn">✋ 手動分配</button>
@@ -3579,38 +3600,126 @@ function buildSlotsArray(ev, size){
   return slots;
 }
 
-// Spreads names starting with "TSL" across distinct round-1 matches so they
-// don't meet each other in the first round, then fills everything else with
-// a normal shuffle (and spreads any leftover byes one-per-match, same as
-// the fully-random builder).
-function buildSlotsArraySeededTsl(ev, size){
+// Runs a lightweight simulation of the real placement mechanics to estimate
+// expected round-1 collisions for a given protection probability — used to
+// calibrate the probability against a target collision count, since there's
+// no simple closed-form for it.
+function estimateSeedCollisions(tslCount, totalMatches, protectionProb, trials){
+  let total = 0;
+  for(let t=0;t<trials;t++){
+    let protectedCount = 0, randomCount = 0;
+    for(let i=0;i<tslCount;i++){ if(Math.random() < protectionProb) protectedCount++; else randomCount++; }
+    const matchFill = new Array(totalMatches).fill(0);
+    const usedMatches = new Set();
+    for(let i=0;i<protectedCount;i++){
+      if(usedMatches.size < totalMatches){
+        let m;
+        do { m = Math.floor(Math.random()*totalMatches); } while(usedMatches.has(m));
+        usedMatches.add(m);
+        matchFill[m] = 1;
+      } else {
+        randomCount++; // overflow beyond available matches just joins the random pool
+      }
+    }
+    let collisions = 0;
+    for(let i=0;i<randomCount;i++){
+      const m = Math.floor(Math.random()*totalMatches);
+      matchFill[m]++;
+      if(matchFill[m] === 2) collisions++;
+    }
+    total += collisions;
+  }
+  return total / trials;
+}
+
+function calibrateSeedProtectionProb(tslCount, totalMatches, targetExpected){
+  if(tslCount <= 1) return 1;
+  if(targetExpected <= 0) return 1;
+  let lo = 0, hi = 1;
+  for(let iter=0; iter<10; iter++){
+    const mid = (lo + hi) / 2;
+    const est = estimateSeedCollisions(tslCount, totalMatches, mid, 120);
+    // Higher protection probability -> fewer collisions, so if we're still
+    // seeing more collisions than the target, push probability up.
+    if(est > targetExpected) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Spreads names starting with "TSL" across distinct round-1 matches with a
+// calibrated probability (not a hard 100%) so the average number of
+// TSL-vs-TSL round-1 meetings lands near targetCollisions — plus optional
+// specific-name placement: seedNames.pairA/pairB go into the same group of
+// four but different round-1 matches (so they can only meet in round 2 if
+// both win), and seedNames.solo goes in the opposite half of the bracket
+// entirely (so it can only meet the pairA/pairB winner in the final).
+function buildSlotsArraySeededTsl(ev, size, targetCollisions, seedNames){
   const capacity = capacityFor(size);
   const names = getEntrantNamesForGeneration(ev).slice(0, size);
-  const isTsl = (n)=> (n || '').trim().toUpperCase().startsWith('TSL');
-  const tslNames = shuffleArray(names.filter(isTsl));
-  const otherNames = shuffleArray(names.filter(n=>!isTsl(n)));
   const totalMatches = capacity / 2;
   const slots = new Array(capacity).fill(null);
-  const matchOrder = shuffleArray(Array.from({length: totalMatches}, (_, i) => i));
+  const placedNames = new Set();
 
+  seedNames = seedNames || {};
+  const findName = (n)=> n && names.find(x=> x === n);
+  const pairA = findName(seedNames.pairA);
+  const pairB = findName(seedNames.pairB);
+  const solo = findName(seedNames.solo);
+
+  if(pairA && pairB && pairA !== pairB){
+    const half = totalMatches / 2;
+    if(half >= 2){
+      const groupCount = Math.floor(half / 2);
+      const g = Math.floor(Math.random() * Math.max(groupCount, 1));
+      const matchA = g*2, matchB = g*2+1;
+      slots[matchA*2 + (Math.random()<0.5?0:1)] = pairA;
+      slots[matchB*2 + (Math.random()<0.5?0:1)] = pairB;
+      placedNames.add(pairA); placedNames.add(pairB);
+    }
+  }
+  if(solo && !placedNames.has(solo)){
+    const half = totalMatches / 2;
+    if(totalMatches > half){
+      const m = half + Math.floor(Math.random() * (totalMatches - half));
+      let slotIdx = m*2 + (Math.random()<0.5?0:1);
+      if(slots[slotIdx] !== null) slotIdx = m*2 + (slotIdx === m*2 ? 1 : 0);
+      if(slots[slotIdx] === null){
+        slots[slotIdx] = solo;
+        placedNames.add(solo);
+      }
+    }
+  }
+
+  const remainingNames = names.filter(n=>!placedNames.has(n));
+  const isTsl = (n)=> (n || '').trim().toUpperCase().startsWith('TSL');
+  const tslNames = shuffleArray(remainingNames.filter(isTsl));
+  const otherNames = shuffleArray(remainingNames.filter(n=>!isTsl(n)));
+
+  const target = (typeof targetCollisions === 'number' && !isNaN(targetCollisions)) ? targetCollisions : 0;
+  const protectionProb = calibrateSeedProtectionProb(tslNames.length, totalMatches, target);
+  const protectedTsl = [], randomTsl = [];
+  tslNames.forEach(n=>{ (Math.random() < protectionProb ? protectedTsl : randomTsl).push(n); });
+
+  const matchOrder = shuffleArray(Array.from({length: totalMatches}, (_, i) => i));
   let idx = 0;
-  while(idx < tslNames.length){
+  while(idx < protectedTsl.length){
     const m = matchOrder[idx % totalMatches];
     const a = m*2, b = m*2+1;
-    if(slots[a] === null) slots[a] = tslNames[idx];
-    else if(slots[b] === null) slots[b] = tslNames[idx];
+    if(slots[a] === null) slots[a] = protectedTsl[idx];
+    else if(slots[b] === null) slots[b] = protectedTsl[idx];
     else {
       const openIdx = slots.findIndex(s=>s===null);
       if(openIdx === -1) break;
-      slots[openIdx] = tslNames[idx];
+      slots[openIdx] = protectedTsl[idx];
     }
     idx++;
   }
 
+  const pool = shuffleArray([...randomTsl, ...otherNames]);
   const emptySlotIdxs = shuffleArray(slots.map((v,i)=> v===null ? i : null).filter(v=>v!==null));
-  const byeCount = Math.max(emptySlotIdxs.length - otherNames.length, 0);
+  const byeCount = Math.max(emptySlotIdxs.length - pool.length, 0);
   if(byeCount === 0){
-    emptySlotIdxs.forEach((slotIdx, i)=>{ slots[slotIdx] = otherNames[i]; });
+    emptySlotIdxs.forEach((slotIdx, i)=>{ slots[slotIdx] = pool[i]; });
   } else {
     const emptyByMatch = {};
     emptySlotIdxs.forEach(slotIdx=>{
@@ -3618,14 +3727,14 @@ function buildSlotsArraySeededTsl(ev, size){
       (emptyByMatch[m] = emptyByMatch[m] || []).push(slotIdx);
     });
     const matchKeys = shuffleArray(Object.keys(emptyByMatch));
-    let byesLeft = byeCount, otherIdx = 0;
+    let byesLeft = byeCount, poolIdx = 0;
     matchKeys.forEach(mk=>{
       const slotIdxs = emptyByMatch[mk];
       if(byesLeft > 0 && slotIdxs.length >= 1){
         slotIdxs.pop(); // this slot is left as a bye
         byesLeft--;
       }
-      slotIdxs.forEach(s=>{ slots[s] = otherNames[otherIdx++]; });
+      slotIdxs.forEach(s=>{ slots[s] = pool[poolIdx++]; });
     });
   }
   return slots;
@@ -3641,7 +3750,9 @@ function buildSlotsArrayInOrder(ev, size){
   return slots;
 }
 
-function generateBracket(ev, size, mode){
+function generateBracket(ev, size, options){
+  options = options || {};
+  const mode = typeof options === 'string' ? options : (options.mode || 'random');
   const realCount = Math.min(getEntrantNamesForGeneration(ev).length, size);
   if(realCount === 3){
     const names = getEntrantNamesForGeneration(ev).slice(0, 3);
@@ -3652,7 +3763,7 @@ function generateBracket(ev, size, mode){
   } else {
     let slots;
     if(mode === 'inOrder') slots = buildSlotsArrayInOrder(ev, size);
-    else if(mode === 'seededTsl') slots = buildSlotsArraySeededTsl(ev, size);
+    else if(mode === 'seededTsl') slots = buildSlotsArraySeededTsl(ev, size, options.targetCollisions, options.seedNames);
     else slots = buildSlotsArray(ev, size);
     ev.bracket = {
       size, capacity: capacityFor(size), slots,
@@ -5325,6 +5436,7 @@ function renderBracketAdminSection(ev){
   document.getElementById('orderConfirmRow').classList.add('hidden');
   document.getElementById('manualAssignPanel').classList.add('hidden');
   document.getElementById('manualConfirmRow').classList.add('hidden');
+  document.getElementById('advancedSeedPanel').classList.add('hidden');
   // 分組循環賽 only makes sense for individual events
   document.getElementById('groupFormatLabel').classList.toggle('hidden', ev.type !== 'individual');
   if(ev.started){
@@ -5402,6 +5514,12 @@ document.getElementById('toggleLockBtn').addEventListener('click', ()=>{
   renderBracketAdminSection(ev);
 });
 
+document.getElementById('toggleAdvancedSeedBtn').addEventListener('click', ()=>{
+  document.getElementById('advancedSeedPanel').classList.toggle('hidden');
+});
+document.getElementById('seedTslCheckbox').addEventListener('change', (e)=>{
+  document.getElementById('seedTslProbRow').style.display = e.target.checked ? 'flex' : 'none';
+});
 document.getElementById('autoShuffleBtn').addEventListener('click', ()=>{
   document.getElementById('manualAssignPanel').classList.add('hidden');
   document.getElementById('orderConfirmRow').classList.add('hidden');
@@ -5441,10 +5559,16 @@ document.getElementById('confirmShuffleBtn').addEventListener('click', ()=>{
   const thresholdInput = parseInt(document.getElementById('winThresholdInput').value, 10);
   ev.winThreshold = (thresholdInput >= 4 && thresholdInput <= 10) ? thresholdInput : 4;
   const seedTsl = document.getElementById('seedTslCheckbox').checked;
+  const seedTarget = parseFloat(document.getElementById('seedTslTargetInput').value);
+  const seedNames = {
+    pairA: document.getElementById('seedNameAInput').value.trim(),
+    pairB: document.getElementById('seedNameBInput').value.trim(),
+    solo: document.getElementById('seedNameCInput').value.trim()
+  };
   if(format === 'swiss'){ generateSwiss(ev, size); }
   else if(format === 'group'){ generateGroupStage(ev, size); }
   else if(format === 'doubleElim'){ generateDoubleElim(ev, size); }
-  else { generateBracket(ev, size, seedTsl ? 'seededTsl' : 'random'); }
+  else { generateBracket(ev, size, { mode: seedTsl ? 'seededTsl' : 'random', targetCollisions: seedTarget, seedNames }); }
   document.getElementById('shuffleConfirmRow').classList.add('hidden');
   renderBracketAdminSection(ev);
 });
